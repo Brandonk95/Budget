@@ -67,19 +67,23 @@
     });
   }
 
+  // Lucide icons (lucide.dev, ISC license), inlined so there's no extra download.
   const ICONS = {
-    dashboard: '<path d="M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-18v6h8V3z"/>',
-    transactions: '<path d="M4 6h16M4 12h16M4 18h10"/>',
-    budget: '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
-    accounts: '<path d="M3 10h18M5 10v8m4-8v8m6-8v8m4-8v8M3 21h18M12 3 3 8h18z"/>',
-    spending: '<path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
-    recurring: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
-    networth: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
-    subscriptions: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
-    goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
-    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+    budget: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+    spending: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+    recurring: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+    subscriptions: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+    transactions: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    networth: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    accounts: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+    goals: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+    more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+    left: '<path d="m15 18-6-6 6-6"/>',
+    right: '<path d="m9 18 6-6-6-6"/>',
   };
-  const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+  const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
 
   // a simple keel/hull mark
   const LOGO = '<img src="brand/favicon-32.png" alt="" width="28" height="28">';
@@ -125,7 +129,7 @@
     $("#app").innerHTML = `
       <div class="auth"><div class="card">
         ${isKeel() ? `<img class="auth-logo" src="brand/logo.png" alt="Keel" width="760" height="431">` : `<div class="brand" style="padding:0 0 6px"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>`}
-        <p class="muted" style="margin:0;text-align:center">Keep your money on an even keel.</p>
+        <p class="tagline">Money, on course.</p>
         <div class="tabs">
           <button data-m="login" class="${mode === "login" ? "on" : ""}">Sign in</button>
           <button data-m="register" class="${mode === "register" ? "on" : ""}">Create account</button>
@@ -145,7 +149,7 @@
     $("#auth-form").onsubmit = async (e) => {
       e.preventDefault();
       const fd = Object.fromEntries(new FormData(e.target));
-      const btn = $("button.primary", e.target); btn.disabled = true;
+      const btn = $("button.primary", e.target); btn.disabled = true; btn.classList.add("loading");
       try {
         if (mode === "forgot") {
           await pb.collection("users").requestPasswordReset(fd.email);
@@ -159,18 +163,19 @@
         }
         await pb.collection("users").authWithPassword(fd.email, fd.password);
         await start();
-      } catch (err) { fail(err); btn.disabled = false; }
+      } catch (err) { fail(err); btn.disabled = false; btn.classList.remove("loading"); }
     };
   }
 
   // ------------------------------------------------------------------ shell / router
+  // `main` routes sit in the mobile bottom bar; the rest live under "More".
   const ROUTES = {
-    dashboard: { title: "Dashboard", render: renderDashboard, month: true },
-    budget: { title: "Budget", render: renderBudget, month: true },
-    spending: { title: "Spending", render: renderSpending, month: true },
+    dashboard: { title: "Overview", render: renderDashboard, month: true, main: true },
+    budget: { title: "Budget", render: renderBudget, month: true, main: true },
+    transactions: { title: "Transactions", render: renderTransactions, month: true, main: true },
+    spending: { title: "Spending", render: renderSpending, month: true, main: true },
     recurring: { title: "Recurring", render: renderRecurring, month: true },
     subscriptions: { title: "Subscriptions", render: renderSubscriptions },
-    transactions: { title: "Transactions", render: renderTransactions, month: true },
     networth: { title: "Net worth", render: renderNetWorth },
     accounts: { title: "Accounts", render: renderAccounts },
     goals: { title: "Goals", render: renderGoals },
@@ -183,19 +188,21 @@
   }
 
   function renderShell() {
+    const me = pb.authStore.record;
     $("#app").innerHTML = `
       <div class="shell">
         <aside class="side">
           ${brandMark()}
-          <nav class="nav">${Object.keys(ROUTES).map((k) => `<a href="#/${k}" data-r="${k}">${icon(k)}<span>${ROUTES[k].title}</span></a>`).join("")}</nav>
-          <div class="foot">${esc(pb.authStore.record.email)}<br><span class="muted">v${esc(state.status.version || "")}</span></div>
+          <nav class="nav" aria-label="Main">${Object.keys(ROUTES).map((k) => `<a href="#/${k}" data-r="${k}" class="${ROUTES[k].main ? "" : "sec"}">${icon(k)}<span>${ROUTES[k].title}</span></a>`).join("")}
+            <button type="button" class="more" id="nav-more" aria-haspopup="dialog">${icon("more")}<span>More</span></button></nav>
+          <div class="foot"><div class="who">${esc(me.name || me.email)}</div><div>Keel v${esc(state.status.version || "")}</div></div>
         </aside>
         <main>
           <div class="topbar">
             <h1 id="page-title"></h1>
             <div class="spacer"></div>
             <div class="month-picker" id="month-picker">
-              <button id="mprev" aria-label="Previous month">‹</button><span id="mlabel"></span><button id="mnext" aria-label="Next month">›</button>
+              <button id="mprev" aria-label="Previous month">${icon("left")}</button><span id="mlabel" aria-live="polite"></span><button id="mnext" aria-label="Next month">${icon("right")}</button>
             </div>
           </div>
           <div id="view"></div>
@@ -203,6 +210,23 @@
       </div>`;
     $("#mprev").onclick = () => { state.month = shiftMonth(state.month, -1); route(); };
     $("#mnext").onclick = () => { state.month = shiftMonth(state.month, 1); route(); };
+    $("#nav-more").onclick = openMoreSheet;
+  }
+
+  // Mobile: the pages that don't fit in the bottom bar.
+  function openMoreSheet() {
+    const r = currentRoute();
+    const root = $("#modal-root");
+    root.innerHTML = `<div class="modal-bg sheet-bg"><div class="modal sheet" role="dialog" aria-modal="true" aria-label="More pages">
+      <nav class="sheet-nav">${Object.keys(ROUTES).filter((k) => !ROUTES[k].main).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}">${icon(k)}${ROUTES[k].title}</a>`).join("")}</nav>
+      <div class="foot">${esc(pb.authStore.record.email)} · Keel v${esc(state.status.version || "")}</div></div></div>`;
+    const bg = $(".modal-bg", root);
+    const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    document.addEventListener("keydown", onKey);
+    bg.addEventListener("mousedown", (e) => { if (e.target === bg) close(); });
+    $$("a", root).forEach((a) => a.addEventListener("click", close));
+    const first = $("a", root); if (first) first.focus();
   }
 
   async function route() {
@@ -212,11 +236,12 @@
     const def = ROUTES[r];
     document.title = `${def.title} · ${state.status.app_name}`;
     $("#page-title").textContent = def.title;
-    $$(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.r === r));
+    $$(".nav a").forEach((a) => { const on = a.dataset.r === r; a.classList.toggle("active", on); if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    $("#nav-more").classList.toggle("active", !def.main);
     $("#month-picker").classList.toggle("hidden", !def.month);
     $("#mlabel").textContent = monthLabel(state.month);
     const view = $("#view");
-    view.innerHTML = `<div class="empty">Loading…</div>`;
+    view.innerHTML = `<div class="empty"><span class="loading-dots">Loading</span></div>`;
     try { await def.render(view); } catch (err) { fail(err); view.innerHTML = `<div class="empty">Couldn't load this page: ${esc(errText(err))}</div>`; }
   }
 
@@ -346,7 +371,7 @@
   const RKIND = { subscription: "Subscriptions", bill: "Bills & utilities", income: "Income" };
   const GROUPS = [["checking", "Checking"], ["credit", "Credit cards"], ["savings", "Savings"], ["investment", "Investments"], ["loan", "Loans"], ["cash", "Cash"], ["other", "Other"]];
   const dueText = (n) => (n < 0 ? `${-n} day${n === -1 ? "" : "s"} late` : n === 0 ? "Today" : n === 1 ? "Tomorrow" : `In ${n} days`);
-  function barClass(pct) { return pct == null ? "" : pct > 100 ? "bad" : pct >= 85 ? "warn" : "good"; }
+  function barClass(pct) { return pct == null ? "" : pct > 100 ? "bad" : pct >= 85 ? "warn" : ""; }
 
   function txLine(t) {
     const c = catById(t.category);
@@ -883,7 +908,7 @@
           try {
             if (isNew) await pb.collection("transactions").create({ ...data, user: pb.authStore.record.id, account: fd.account });
             else await pb.collection("transactions").update(tx.id, data);
-            close(); toast("Saved");
+            close(); toast("Changes saved");
             if (!isNew && fd.category && fd.category !== tx.category) offerRule(tx, fd.category);
             if (currentRoute() === "transactions") loadTx(); else route();
           } catch (err) { fail(err); }
@@ -1277,7 +1302,7 @@
       onMount: (m, close) => {
         $("#sf-form", m).onsubmit = async (e) => {
           e.preventDefault();
-          const btn = $("button.primary", e.target); btn.disabled = true; btn.textContent = "Connecting… (up to a minute)";
+          const btn = $("button.primary", e.target); btn.disabled = true; btn.classList.add("loading"); btn.textContent = "Connecting… (up to a minute)";
           try {
             const r = await api("/api/budget/connect", { method: "POST", body: Object.fromEntries(new FormData(e.target)) });
             close();

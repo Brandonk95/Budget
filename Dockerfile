@@ -4,6 +4,7 @@ LABEL org.opencontainers.image.title="Keel"       org.opencontainers.image.descr
 
 ARG PB_VERSION=0.40.6
 ARG PB_SDK_VERSION=0.28.2
+ARG INTER_VERSION=5.1.0
 ARG TARGETARCH
 
 RUN apk add --no-cache ca-certificates tzdata unzip wget \
@@ -24,7 +25,8 @@ COPY pb_hooks ./pb_hooks
 COPY pb_public ./pb_public
 COPY release.json ./release.json
 RUN mkdir -p pb_public/vendor \
- && wget -q "https://cdn.jsdelivr.net/npm/pocketbase@${PB_SDK_VERSION}/dist/pocketbase.umd.js" -O pb_public/vendor/pocketbase.umd.js
+ && wget -q "https://cdn.jsdelivr.net/npm/pocketbase@${PB_SDK_VERSION}/dist/pocketbase.umd.js" -O pb_public/vendor/pocketbase.umd.js \
+ && wget -q "https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@${INTER_VERSION}/files/inter-latin-wght-normal.woff2" -O pb_public/vendor/inter.woff2
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

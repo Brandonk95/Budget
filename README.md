@@ -1,6 +1,6 @@
 # Keel
 
-**Keep your money on an even keel.** Keel is a self-hosted budgeting app built on [PocketBase](https://pocketbase.io). It runs as one Docker container and updates itself automatically.
+**Money, on course.** Keel is a self-hosted budgeting app built on [PocketBase](https://pocketbase.io). It runs as one Docker container and updates itself automatically.
 
 - **Bank sync** through [SimpleFIN Bridge](https://beta-bridge.simplefin.org) (about $15/year). Balances and transactions sync every 6 hours. You can also import CSV files from any bank.
 - **One monthly budget, Rocket Money style.** Set a single spending number, give the categories you care about their own slice, and everything else shares the rest. A guided "Create budget" setup suggests amounts from your recent spending. Categories can roll unspent money (or overspending) into next month. The budget page shows what's left to spend, a safe amount per day, and this month's bills marked paid or due.
@@ -8,11 +8,12 @@
 - **Subscription tracker**: all your monthly and yearly subscriptions with their cost per month or per year, next renewal dates, price-increase flags and how much you save by cancelling. Subscriptions it spots in your transactions (including yearly ones charged only once) are suggested so you can track them in one click.
 - **Spending** breakdown by category and merchant, with a 6-month trend.
 - **Net worth** over time: assets minus credit cards and loans, recorded daily (earlier history is estimated from transactions).
-- **Dashboard**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
+- **Overview**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
 - **Insights**: month-end projections, a 50/30/20 check and plain-language tips.
 - **Auto-categorization**: your own rules ("contains *kroger* → Groceries") plus built-in guesses for common merchants. When you change a transaction's category, the app offers to turn it into a rule.
 - **Goals** with the monthly amount needed to hit each target date.
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
+- **Calm, accessible design**: Keel Blue on cool neutrals, the Inter typeface, Lucide icons, a dark mode of its own, a phone layout with a bottom bar, and reduced-motion support.
 - **Email over SMTP**: alerts when a budget passes your warning threshold or goes over it, alerts for large transactions, a failed-sync notice, a weekly summary, plus password reset and verification emails.
 
 ## Install

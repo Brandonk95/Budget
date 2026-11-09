@@ -164,43 +164,46 @@ function compute(app, userId, monthKey) {
   const money = util.money;
   for (const c of spendCats) {
     if (c.budget > 0 && c.spent > c.available) {
-      tips.push({ level: "bad", text: `${c.icon} ${c.name} is over budget by ${money(c.spent - c.available)}.` });
+      tips.push({ level: "bad", text: `You've passed your ${c.icon} ${c.name} budget by ${money(c.spent - c.available)}. Moving money from another category keeps the month balanced.` });
     } else if (isCurrent && c.budget > 0 && c.projected > c.available * 1.05) {
-      tips.push({ level: "warn", text: `${c.icon} ${c.name} is on pace for ${money(c.projected)} vs ${money(c.available)} budgeted. ${money(Math.max(0, c.available - c.spent) / Math.max(1, remainingDays))}/day keeps you on track.` });
+      tips.push({ level: "warn", text: `${c.icon} ${c.name} is heading toward ${money(c.projected)} of ${money(c.available)}. Keeping it to ${money(Math.max(0, c.available - c.spent) / Math.max(1, remainingDays))}/day keeps you on course.` });
     }
     if (c.budget === 0 && c.spent > 0 && totalBudget === 0) {
-      tips.push({ level: "info", text: `${c.icon} ${c.name} has ${money(c.spent)} spent but no budget. Suggested: ${money(c.suggested || Math.ceil(c.spent / 5) * 5)}.` });
+      tips.push({ level: "info", text: `${c.icon} ${c.name}: ${money(c.spent)} spent with no budget yet. ${money(c.suggested || Math.ceil(c.spent / 5) * 5)} would be a good starting point.` });
     }
   }
   if (everythingElse.budget > 0 && everythingElse.spent > everythingElse.budget) {
-    tips.push({ level: "bad", text: `“Everything else” is over by ${money(everythingElse.spent - everythingElse.budget)}. Give the biggest categories their own budget so you can see where it's going.` });
+    tips.push({ level: "bad", text: `You've passed your “Everything else” budget by ${money(everythingElse.spent - everythingElse.budget)}. Giving the biggest categories their own budget shows where it's going.` });
   }
   if (totalBudget === 0 && avgSpend > 0) {
-    tips.push({ level: "info", text: `You usually spend about ${money(avgSpend)}/month. Create a budget on the Budget page to track what's left.` });
+    tips.push({ level: "info", text: `You usually spend about ${money(avgSpend)} a month. Set a budget on the Budget page to see what's left as you go.` });
   }
   if (cur.uncatCount > 0) {
-    tips.push({ level: "info", text: `${cur.uncatCount} transaction(s) this month are uncategorized. Categorize them (and create rules) so your budget is accurate.` });
+    tips.push({ level: "info", text: `${cur.uncatCount} transaction(s) this month need a category. Sorting them (and saving a rule) keeps your budget accurate.` });
   }
   if (expectedIncome > 0) {
     const unassigned = expectedIncome - totalBudget;
     if (unassigned > 50) {
-      tips.push({ level: "good", text: `${money(unassigned)} of your typical income isn't assigned to a category. Give every dollar a job — put it toward a goal or savings.` });
+      tips.push({ level: "good", text: `${money(unassigned)} of your typical income isn't planned yet. Consider putting it toward a goal or savings.` });
     } else if (unassigned < -50) {
-      tips.push({ level: "bad", text: `You've budgeted ${money(-unassigned)} more than your typical income (${money(expectedIncome)}).` });
+      tips.push({ level: "bad", text: `Your budget is ${money(-unassigned)} more than your typical income (${money(expectedIncome)}). Trimming a category or two brings it back in line.` });
     }
     const savingsRate = (expectedIncome - projectedSpend + cur.savings) / expectedIncome;
     if (savingsRate < 0.1 && !isFuture) {
-      tips.push({ level: "warn", text: `Projected savings rate is ${Math.round(savingsRate * 100)}%. Aim for at least 10–20% of income.` });
+      tips.push({ level: "warn", text: `You're on pace to save ${Math.round(savingsRate * 100)}% of income this month. Many people aim for 10–20%.` });
     }
     if (split.wants_pct > 30) {
-      tips.push({ level: "info", text: `Wants are ${split.wants_pct}% of income (50/30/20 guideline: 30%).` });
+      tips.push({ level: "info", text: `Wants are ${split.wants_pct}% of income. The 50/30/20 guideline suggests about 30%.` });
     }
   }
   if (recurringTotal > 0) {
-    tips.push({ level: "info", text: `You have about ${money(recurringTotal)}/month in bills and subscriptions across ${recurringCount} merchant(s). Review them on the Recurring page for anything you no longer use.` });
+    tips.push({ level: "info", text: `About ${money(recurringTotal)} a month goes to bills and subscriptions across ${recurringCount} merchant(s). The Recurring page is a good place to spot anything you no longer use.` });
+  }
+  if (txs.length && totalBudget > 0 && isCurrent && !tips.some((t) => t.level === "bad" || t.level === "warn")) {
+    tips.unshift({ level: "good", text: "You're on track this month." });
   }
   if (!txs.length) {
-    tips.push({ level: "info", text: "No transactions yet. Connect a bank on the Accounts page or import a CSV." });
+    tips.push({ level: "info", text: "No transactions yet. Connect a bank on the Accounts page or import a CSV to get started." });
   }
 
   return {

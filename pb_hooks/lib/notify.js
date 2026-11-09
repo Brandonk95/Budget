@@ -9,13 +9,13 @@ function smtpReady(app) {
 function layout(app, title, bodyHtml) {
   const url = app.settings().meta.appURL;
   const name = app.settings().meta.appName;
-  return `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1d2330">
+  return `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;line-height:1.5">
 <div style="max-width:560px;margin:0 auto;padding:24px">
-${name === "Keel" && /^https?:\/\//.test(url) ? `<div style="text-align:center;margin:0 0 16px"><img src="${util.esc(url.replace(/\/$/, ""))}/brand/logo.png" alt="Keel" width="150" style="border-radius:10px;display:inline-block"></div>` : ""}
-<div style="background:#fff;border-radius:12px;padding:24px;border:1px solid #e3e6eb">
-<h2 style="margin:0 0 16px;font-size:20px">${util.esc(title)}</h2>${bodyHtml}
-<p style="margin:24px 0 0"><a href="${util.esc(url)}" style="background:#0d58dc;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Open ${util.esc(name)}</a></p>
-</div><p style="color:#7a8291;font-size:12px;text-align:center">You can change email preferences in Settings.</p></div></body></html>`;
+${name === "Keel" && /^https?:\/\//.test(url) ? `<div style="text-align:center;margin:0 0 16px"><img src="${util.esc(url.replace(/\/$/, ""))}/brand/logo.png" alt="Keel" width="150" style="border-radius:12px;display:inline-block"></div>` : ""}
+<div style="background:#fff;border-radius:16px;padding:24px;border:1px solid #e5eaf1">
+<h2 style="margin:0 0 16px;font-size:20px;font-weight:600;letter-spacing:-.01em">${util.esc(title)}</h2>${bodyHtml}
+<p style="margin:24px 0 0"><a href="${util.esc(url)}" style="background:#155eef;color:#fff;padding:11px 18px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:600">Open ${util.esc(name)}</a></p>
+</div><p style="color:#5f6b80;font-size:12px;text-align:center">You can change email preferences in Settings.</p></div></body></html>`;
 }
 
 function send(app, to, subject, html) {
@@ -50,7 +50,7 @@ function claimKey(app, userId, key) {
 
 function row(cells, bold) {
   return "<tr>" + cells.map((c, i) =>
-    `<td style="padding:6px 4px;border-bottom:1px solid #eef0f3;${i ? "text-align:right;" : ""}${bold ? "font-weight:600;" : ""}">${c}</td>`,
+    `<td style="padding:6px 4px;border-bottom:1px solid #e5eaf1;${i ? "text-align:right;" : ""}${bold ? "font-weight:600;" : ""}">${c}</td>`,
   ).join("") + "</tr>";
 }
 const table = (rows) => `<table style="width:100%;border-collapse:collapse;font-size:14px">${rows.join("")}</table>`;
@@ -73,9 +73,9 @@ function checkBudgets(app, user) {
   const rows = [row(["Category", "Spent", "Budget"], true)].concat(hits.map(({ c, level }) =>
     row([`${util.esc(c.icon)} ${util.esc(c.name)} ${level === "over" ? "🔴" : "🟡"}`, util.money(c.spent), util.money(c.budget)])));
   const over = hits.filter((h) => h.level === "over").length;
-  const subject = over ? `⚠️ ${over} budget categor${over > 1 ? "ies" : "y"} over limit` : `Heads up: nearing your budget`;
+  const subject = over ? `You've passed ${over} budget${over > 1 ? "s" : ""}` : `You're getting close to a budget`;
   send(app, user.getString("email"), subject, layout(app, subject,
-    `<p>Here's where you stand for ${data.month} with ${data.remaining_days} day(s) left:</p>${table(rows)}
+    `<p>Here's where things stand for ${data.month}, with ${data.remaining_days} day(s) to go:</p>${table(rows)}
      <p>Safe to spend: <b>${util.money(data.safe_per_day)}/day</b> across all categories.</p>`));
   return hits.length;
 }
@@ -97,9 +97,9 @@ function syncFailed(app, user, conn, message) {
   const key = `syncerr:${conn.id}:${util.today().slice(0, 10)}`;
   if (!claimKey(app, user.id, key)) return;
   send(app, user.getString("email"), "Bank sync failed",
-    layout(app, "Bank sync failed", `<p>We couldn't sync <b>${util.esc(conn.getString("name") || "your bank")}</b>:</p>
-      <pre style="white-space:pre-wrap;background:#f6f7f9;padding:12px;border-radius:8px">${util.esc(message)}</pre>
-      <p>If this keeps happening, reconnect the bank from the Accounts page.</p>`));
+    layout(app, "Bank sync failed", `<p>We couldn't refresh <b>${util.esc(conn.getString("name") || "your bank")}</b>:</p>
+      <pre style="white-space:pre-wrap;background:#f5f7fa;padding:12px;border-radius:10px">${util.esc(message)}</pre>
+      <p>Keel will try again on the next sync. If it keeps happening, reconnect the bank from the Accounts page.</p>`));
 }
 
 // Emails bills/subscriptions due in the next `days` days (each occurrence once).
