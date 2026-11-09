@@ -1,0 +1,5 @@
+.env
+pb_data/
+pb_public/vendor/
+
+teller/*.pem

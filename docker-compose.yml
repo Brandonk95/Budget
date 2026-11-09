@@ -1,0 +1,23 @@
+services:
+  budget:
+    build: .
+    image: budget-pocketbase:latest
+    container_name: budget
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${PORT:-8090}:8090"
+    volumes:
+      - ./pb_data:/pb/pb_data
+
+  # Adds your Teller client certificate (mTLS) to API calls. Only needed for
+  # Teller's development/production environments. Enable with COMPOSE_PROFILES=teller in .env.
+  # Not exposed outside the compose network.
+  teller-proxy:
+    image: nginx:1.27-alpine
+    container_name: budget-teller-proxy
+    restart: unless-stopped
+    profiles: ["teller"]
+    volumes:
+      - ./teller-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./teller:/certs:ro
