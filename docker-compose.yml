@@ -1,23 +1,186 @@
-services:
-  budget:
-    build: .
-    image: budget-pocketbase:latest
-    container_name: budget
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "${PORT:-8090}:8090"
-    volumes:
-      - ./pb_data:/pb/pb_data
+# Keel: self-hosted budgeting with bank sync.
+#
+# Works as-is with:
+#   - CasaOS / ZimaOS: App Store → Custom Install → Import → paste this file.
+#     Edit the environment values in the install dialog (or later via the app's Settings).
+#   - Plain Docker:     docker compose up -d   (edit the values below first)
+#
+# Data lives in /DATA/AppData/keel. The file is self-contained: no .env and no repo checkout needed.
+# If a value contains a "$", write it as "$$".
 
-  # Adds your Teller client certificate (mTLS) to API calls. Only needed for
-  # Teller's development/production environments. Enable with COMPOSE_PROFILES=teller in .env.
-  # Not exposed outside the compose network.
-  teller-proxy:
-    image: nginx:1.27-alpine
-    container_name: budget-teller-proxy
+name: keel
+
+services:
+  keel:
+    image: ghcr.io/brandonk95/keel:latest
+    container_name: keel
     restart: unless-stopped
-    profiles: ["teller"]
+    ports:
+      - target: 8090
+        published: "8095"
+        protocol: tcp
     volumes:
-      - ./teller-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./teller:/certs:ro
+      - type: bind
+        source: /DATA/AppData/keel/pb_data
+        target: /pb/pb_data
+        bind:
+          create_host_path: true
+    environment:
+      TZ: $TZ
+      APP_NAME: Keel
+      # The address you open Keel at; used in email links
+      APP_URL: http://casaos.local:8095
+      # Set to "false" after you create your account
+      ALLOW_SIGNUPS: "true"
+      # PocketBase admin dashboard (http://<host>:8095/_/)
+      PB_ADMIN_EMAIL: admin@example.com
+      PB_ADMIN_PASSWORD: change-me-to-a-long-password
+      # Optional, exactly 32 characters: encrypts stored settings such as the SMTP password
+      PB_ENCRYPTION_KEY: ""
+      # Email (leave SMTP_HOST empty to disable)
+      SMTP_HOST: ""
+      SMTP_PORT: "587"
+      SMTP_TLS: "false"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_AUTH_METHOD: PLAIN
+      SMTP_SENDER_ADDRESS: keel@example.com
+      SMTP_SENDER_NAME: Keel
+      # Teller bank sync (free): https://teller.io; leave TELLER_APP_ID empty to hide it
+      TELLER_APP_ID: ""
+      TELLER_ENV: development
+      # Schedules (cron, UTC)
+      SYNC_CRON: "0 */6 * * *"
+      ALERT_CRON: "30 * * * *"
+      DIGEST_CRON: "0 14 * * 1"
+    depends_on:
+      - teller-proxy
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=keel
+    x-casaos:
+      ports:
+        - container: "8090"
+          description:
+            en_US: Web UI
+      volumes:
+        - container: /pb/pb_data
+          description:
+            en_US: Keel database, backups and logs. Back this folder up.
+      envs:
+        - container: APP_URL
+          description:
+            en_US: Address you open Keel at (used in email links), e.g. http://192.168.1.10:8095
+        - container: ALLOW_SIGNUPS
+          description:
+            en_US: Allow new accounts. Set to false after creating yours.
+        - container: PB_ADMIN_EMAIL
+          description:
+            en_US: Admin dashboard login email (/_/)
+        - container: PB_ADMIN_PASSWORD
+          description:
+            en_US: Admin dashboard password. Change this.
+        - container: PB_ENCRYPTION_KEY
+          description:
+            en_US: Optional 32-character key to encrypt stored settings
+        - container: SMTP_HOST
+          description:
+            en_US: SMTP server for alerts and weekly summaries (empty = email off)
+        - container: SMTP_PORT
+          description:
+            en_US: 587 for STARTTLS, 465 for TLS
+        - container: SMTP_TLS
+          description:
+            en_US: true for port 465 (implicit TLS), false otherwise
+        - container: SMTP_USERNAME
+          description:
+            en_US: SMTP username
+        - container: SMTP_PASSWORD
+          description:
+            en_US: SMTP password or app password
+        - container: SMTP_SENDER_ADDRESS
+          description:
+            en_US: From address for emails
+        - container: TELLER_APP_ID
+          description:
+            en_US: Teller application ID for free bank sync (empty = hidden)
+        - container: TELLER_ENV
+          description:
+            en_US: sandbox (fake data), development (real banks, free) or production
+
+  # Adds your Teller client certificate (mTLS). Idles until certificate.pem and
+  # private_key.pem are placed in /DATA/AppData/keel/teller. Not reachable from outside.
+  teller-proxy:
+    image: ghcr.io/brandonk95/keel-teller-proxy:latest
+    container_name: keel-teller-proxy
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /DATA/AppData/keel/teller
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: true
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.scope=keel
+    x-casaos:
+      volumes:
+        - container: /certs
+          description:
+            en_US: Teller client certificate folder (certificate.pem + private_key.pem)
+
+  # Auto-update: checks for new Keel images every 5 minutes and restarts with them.
+  # Only touches containers in this app (scope "keel").
+  watchtower:
+    image: nickfedor/watchtower:1.24
+    container_name: keel-watchtower
+    restart: unless-stopped
+    environment:
+      TZ: $TZ
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_SCOPE: keel
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+    labels:
+      - com.centurylinklabs.watchtower.scope=keel
+    x-casaos:
+      envs:
+        - container: WATCHTOWER_POLL_INTERVAL
+          description:
+            en_US: Seconds between update checks (300 = 5 minutes)
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: keel
+  author: Brandonk95
+  developer: Brandonk95
+  category: Finance
+  icon: https://cdn.jsdelivr.net/gh/Brandonk95/Budget@main/assets/icon.svg
+  title:
+    en_US: Keel
+  tagline:
+    en_US: Keep your money on an even keel
+  description:
+    en_US: |
+      Self-hosted budgeting with bank sync. Connect banks for free with Teller (or SimpleFIN / CSV import),
+      set category budgets, and get insights: safe-to-spend per day, month-end projections, a 50/30/20 check,
+      recurring charge detection, savings goals, and email alerts plus a weekly summary over SMTP.
+      Updates itself automatically.
+  tips:
+    before_install:
+      en_US: |
+        Before installing, set APP_URL to the address you'll use (e.g. http://192.168.1.10:8095),
+        change PB_ADMIN_PASSWORD, and fill in SMTP_* if you want email alerts.
+        For Teller bank sync, add your TELLER_APP_ID and later upload certificate.pem and
+        private_key.pem to /DATA/AppData/keel/teller with the Files app.
+  index: /
+  port_map: "8095"
+  scheme: http

@@ -1,5 +1,7 @@
 FROM alpine:3.22
 
+LABEL org.opencontainers.image.title="Keel"       org.opencontainers.image.description="Self-hosted budgeting with bank sync, built on PocketBase"       org.opencontainers.image.source="https://github.com/Brandonk95/Budget"
+
 ARG PB_VERSION=0.40.6
 ARG PB_SDK_VERSION=0.28.2
 ARG TARGETARCH
@@ -20,6 +22,7 @@ WORKDIR /pb
 COPY pb_migrations ./pb_migrations
 COPY pb_hooks ./pb_hooks
 COPY pb_public ./pb_public
+COPY release.json ./release.json
 RUN mkdir -p pb_public/vendor \
  && wget -q "https://cdn.jsdelivr.net/npm/pocketbase@${PB_SDK_VERSION}/dist/pocketbase.umd.js" -O pb_public/vendor/pocketbase.umd.js
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh

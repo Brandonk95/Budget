@@ -25,6 +25,11 @@ onRecordCreate((e) => {
     e.record.set("alert_threshold", 90);
     e.record.set("large_txn_threshold", 500);
     e.record.set("weekly_digest", true);
+    e.record.set("update_notes", true);
+  }
+  // new accounts start on the current release, so they don't get an update popup right away
+  if (!e.record.getString("last_seen_version")) {
+    e.record.set("last_seen_version", require(`${__hooks}/lib/release.js`).info().version);
   }
   e.next();
 }, "users");
@@ -232,7 +237,11 @@ routerAdd("POST", "/api/budget/digest", (e) => {
 
 routerAdd("GET", "/api/budget/status", (e) => {
   const t = require(`${__hooks}/lib/teller.js`).config();
+  const rel = require(`${__hooks}/lib/release.js`).info();
   return e.json(200, {
+    version: rel.version,
+    released: rel.released,
+    motd: rel.motd,
     smtp: e.app.settings().smtp.enabled,
     app_name: e.app.settings().meta.appName,
     teller: t.appId ? { app_id: t.appId, environment: t.env } : null,

@@ -5,7 +5,7 @@ const util = require(`${__hooks}/lib/util.js`);
 
 function applySettings(app) {
   const s = app.settings();
-  s.meta.appName = util.env("APP_NAME", "Budget");
+  s.meta.appName = util.env("APP_NAME", "Keel");
   s.meta.appURL = util.env("APP_URL", "http://localhost:8090");
 
   const host = util.env("SMTP_HOST", "");
@@ -17,7 +17,7 @@ function applySettings(app) {
     s.smtp.password = util.env("SMTP_PASSWORD", "");
     s.smtp.tls = util.env("SMTP_TLS", "false") === "true";
     s.smtp.authMethod = util.env("SMTP_AUTH_METHOD", "PLAIN");
-    s.meta.senderAddress = util.env("SMTP_SENDER_ADDRESS", util.env("SMTP_USERNAME", "budget@localhost"));
+    s.meta.senderAddress = util.env("SMTP_SENDER_ADDRESS", util.env("SMTP_USERNAME", "keel@localhost"));
     s.meta.senderName = util.env("SMTP_SENDER_NAME", s.meta.appName);
   } else {
     s.smtp.enabled = false;

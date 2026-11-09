@@ -1,0 +1,12 @@
+# Build Keel from source instead of pulling the published images:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+# Watchtower would replace local builds with the registry images, so it's disabled here.
+services:
+  keel:
+    build: .
+    image: keel:local
+  teller-proxy:
+    build: ./teller-proxy
+    image: keel-teller-proxy:local
+  watchtower:
+    profiles: ["disabled"]

@@ -36,14 +36,14 @@ function request(token, method, path) {
     });
   } catch (err) {
     throw new TellerError(0, "network", "Couldn't reach Teller at " + cfg.base + " (" + util.errMsg(err) + ")." +
-      (cfg.base.indexOf("teller-proxy") !== -1 ? " Is the teller-proxy container running? Start it with COMPOSE_PROFILES=teller." : ""));
+      (cfg.base.indexOf("teller-proxy") !== -1 ? " Is the teller-proxy container running? Check the keel-teller-proxy container logs." : ""));
   }
   if (res.statusCode >= 200 && res.statusCode < 300) return res.json;
 
   const err = (res.json && res.json.error) || {};
   let msg = err.message || toString(res.body).slice(0, 300) || "HTTP " + res.statusCode;
   if (res.statusCode === 400 && /certificate/i.test(msg)) {
-    msg = "Teller needs your client certificate: put certificate.pem and private_key.pem in ./teller and run the teller-proxy (COMPOSE_PROFILES=teller). " + msg;
+    msg = "Teller needs your client certificate: put certificate.pem and private_key.pem in the teller folder (/DATA/AppData/keel/teller on CasaOS); the proxy picks them up within a minute. " + msg;
   }
   throw new TellerError(res.statusCode, err.code, msg);
 }

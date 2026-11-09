@@ -1,4 +1,4 @@
-/* Budget — single-page app on top of PocketBase. No build step. */
+/* Keel: single-page budgeting app on top of PocketBase. No build step. */
 (() => {
   "use strict";
 
@@ -77,12 +77,15 @@
   };
   const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
 
+  // a simple keel/hull mark
+  const LOGO = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18l-3.5 7.5a3 3 0 0 1-2.7 1.5H9.2a3 3 0 0 1-2.7-1.5z"/><path d="M12 9V3M12 18v3"/></svg>';
+
   // ------------------------------------------------------------------ state
   const state = {
     month: thisMonth(),
     categories: [],
     accounts: [],
-    status: { smtp: false, app_name: "Budget" },
+    status: { smtp: false, app_name: "Keel" },
   };
   const catById = (id) => state.categories.find((c) => c.id === id);
   const accById = (id) => state.accounts.find((a) => a.id === id);
@@ -111,7 +114,7 @@
     document.title = state.status.app_name;
     $("#app").innerHTML = `
       <div class="auth"><div class="card">
-        <div class="brand" style="padding:0 0 6px"><div class="logo">$</div>${esc(state.status.app_name)}</div>
+        <div class="brand" style="padding:0 0 6px"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>
         <p class="muted" style="margin:0">Track your accounts, spend with intention.</p>
         <div class="tabs">
           <button data-m="login" class="${mode === "login" ? "on" : ""}">Sign in</button>
@@ -169,9 +172,9 @@
     $("#app").innerHTML = `
       <div class="shell">
         <aside class="side">
-          <div class="brand"><div class="logo">$</div>${esc(state.status.app_name)}</div>
+          <div class="brand"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>
           <nav class="nav">${Object.keys(ROUTES).map((k) => `<a href="#/${k}" data-r="${k}">${icon(k)}<span>${ROUTES[k].title}</span></a>`).join("")}</nav>
-          <div class="foot">${esc(pb.authStore.record.email)}</div>
+          <div class="foot">${esc(pb.authStore.record.email)}<br><span class="muted">v${esc(state.status.version || "")}</span></div>
         </aside>
         <main>
           <div class="topbar">
@@ -997,12 +1000,13 @@
                 <label class="field"><span>Large transaction alert ($)</span><input name="large_txn_threshold" type="number" min="0" step="1" value="${me.large_txn_threshold || 0}"></label>
               </div>
               <label class="check"><input type="checkbox" name="weekly_digest" ${me.weekly_digest ? "checked" : ""}> Weekly summary email</label>
+              <label class="check"><input type="checkbox" name="update_notes" ${me.update_notes ? "checked" : ""}> Show what's new when Keel updates (top-right popup)</label>
               <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="digest-now" ${state.status.smtp ? "" : "disabled"}>Send me a summary now</button></div>
             </form>
           </div>
           <div class="card">
             <div class="card-h"><h2>Account</h2></div>
-            <p class="small muted" style="margin-top:0">Signed in as ${esc(me.email)}${me.verified ? "" : " (unverified)"}.</p>
+            <p class="small muted" style="margin-top:0">Signed in as ${esc(me.email)}${me.verified ? "" : " (unverified)"}. Running Keel v${esc(state.status.version)}${state.status.released ? ` (${esc(state.status.released)})` : ""}.</p>
             <div class="row">
               ${state.status.smtp ? `<button class="btn" id="reset-pw">Email me a password reset link</button>` : ""}
               ${state.status.smtp && !me.verified ? `<button class="btn" id="verify">Resend verification</button>` : ""}
@@ -1021,10 +1025,11 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
-        await pb.collection("users").update(me.id, {
-          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"),
+        const saved = await pb.collection("users").update(me.id, {
+          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"),
           alert_threshold: Number(fd.get("alert_threshold")) || 90, large_txn_threshold: Number(fd.get("large_txn_threshold")) || 0,
         });
+        pb.authStore.save(pb.authStore.token, saved);
         toast("Preferences saved");
       } catch (err) { fail(err); }
     };
@@ -1037,16 +1042,85 @@
     $$(".rule-del", view).forEach((b) => (b.onclick = async () => { try { await pb.collection("rules").delete(b.dataset.id); route(); } catch (err) { fail(err); } }));
   }
 
+  // ------------------------------------------------------------------ update notes
+  // The server is auto-updated (Watchtower). We show a small "what's new" card when
+  // the running version differs from the last one this user acknowledged.
+  const loadedVersion = { v: "" };
+
+  function notesEnabled() {
+    const me = pb.authStore.isValid && pb.authStore.record;
+    return !!(me && me.update_notes !== false);
+  }
+
+  async function markSeen(version) {
+    const me = pb.authStore.record;
+    if (!me || me.last_seen_version === version) return;
+    try {
+      const saved = await pb.collection("users").update(me.id, { last_seen_version: version });
+      pb.authStore.save(pb.authStore.token, saved);
+    } catch (_) {}
+  }
+
+  function showUpdate(info, needsReload) {
+    if (!info.version || info.version === "dev") return;
+    let el = $("#update-pop");
+    if (!el) { el = document.createElement("div"); el.id = "update-pop"; document.body.appendChild(el); }
+    el.className = "update-pop";
+    el.setAttribute("role", "status");
+    el.innerHTML = `
+      <button class="x" aria-label="Dismiss">×</button>
+      <div class="up-h"><span class="up-badge">New</span> ${esc(state.status.app_name)} updated to <b>v${esc(info.version)}</b></div>
+      ${info.released ? `<div class="small muted">${esc(info.released)}</div>` : ""}
+      ${info.motd ? `<p>${esc(info.motd)}</p>` : ""}
+      <div class="row">
+        ${needsReload ? `<button class="btn primary sm" id="up-reload">Reload now</button>` : `<button class="btn primary sm" id="up-ok">Got it</button>`}
+        <div class="spacer"></div>
+        <button class="btn link small" id="up-off">Don't show these</button>
+      </div>`;
+    const close = () => { markSeen(info.version); el.remove(); };
+    $(".x", el).onclick = close;
+    const ok = $("#up-ok", el); if (ok) ok.onclick = close;
+    const rl = $("#up-reload", el); if (rl) rl.onclick = async () => { await markSeen(info.version); location.reload(); };
+    $("#up-off", el).onclick = async () => {
+      el.remove();
+      try {
+        const saved = await pb.collection("users").update(pb.authStore.record.id, { update_notes: false, last_seen_version: info.version });
+        pb.authStore.save(pb.authStore.token, saved);
+        toast("Update notes turned off. Turn them back on in Settings.");
+      } catch (err) { fail(err); }
+    };
+  }
+
+  function checkSeenVersion() {
+    const me = pb.authStore.record;
+    if (notesEnabled() && state.status.version && me.last_seen_version !== state.status.version) {
+      showUpdate(state.status, false);
+    }
+  }
+
+  async function pollVersion() {
+    let s;
+    try { s = await api("/api/budget/status"); } catch (_) { return; } // server restarting mid-update
+    if (!s.version || s.version === loadedVersion.v) return;
+    state.status = s;
+    loadedVersion.v = s.version;
+    if (notesEnabled()) showUpdate(s, true);
+    else if (document.hidden) location.reload(); // pick up the new UI quietly
+  }
+
   // ------------------------------------------------------------------ boot
   async function start() {
     renderShell();
     await Promise.all([loadCategories(), loadAccounts()]).catch(() => {});
     route();
+    checkSeenVersion();
   }
 
   window.addEventListener("hashchange", route);
   (async () => {
     try { state.status = await api("/api/budget/status"); } catch (_) {}
+    loadedVersion.v = state.status.version || "";
+    setInterval(pollVersion, 60 * 1000);
     if (pb.authStore.isValid) {
       try { await pb.collection("users").authRefresh(); } catch (_) { pb.authStore.clear(); }
     }
