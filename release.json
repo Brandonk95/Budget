@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "released": "2026-11-09",
-  "motd": "Keel 2.0: a new Budget page with one monthly budget, category limits, rollover and a guided setup. Plus Recurring (bills and subscriptions on a calendar), Spending, and Net worth pages. Open Budget to create yours."
+  "motd": "New Subscriptions page: every monthly and yearly subscription in one place, with total cost per month or year, upcoming renewals and price increases. Keel also suggests subscriptions it spotted in your transactions so you can track them in one click."
 }

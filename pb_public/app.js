@@ -75,6 +75,7 @@
     spending: '<path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
     recurring: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
     networth: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
+    subscriptions: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
     goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   };
@@ -162,6 +163,7 @@
     budget: { title: "Budget", render: renderBudget, month: true },
     spending: { title: "Spending", render: renderSpending, month: true },
     recurring: { title: "Recurring", render: renderRecurring, month: true },
+    subscriptions: { title: "Subscriptions", render: renderSubscriptions },
     transactions: { title: "Transactions", render: renderTransactions, month: true },
     networth: { title: "Net worth", render: renderNetWorth },
     accounts: { title: "Accounts", render: renderAccounts },
@@ -570,14 +572,17 @@
     };
   }
 
-  function editRecurring(it) {
+  const COMMON_SUBS = ["Netflix", "Spotify", "Hulu", "Disney+", "Max", "YouTube Premium", "Apple One", "iCloud+", "Amazon Prime", "Paramount+", "Peacock", "Audible", "Xbox Game Pass", "PlayStation Plus", "Nintendo Switch Online", "Adobe Creative Cloud", "Microsoft 365", "Google One", "Dropbox", "ChatGPT Plus", "Claude Pro", "GitHub", "1Password", "Duolingo", "Headspace", "Gym membership", "New York Times", "SiriusXM"];
+
+  function editRecurring(it, defaults) {
     const isNew = !it;
-    it = it || { name: "", amount: "", kind: "bill", frequency: "monthly", next_date: ymd(new Date()), category: "", status: "active", source: "manual" };
+    it = it || { name: "", amount: "", kind: "bill", frequency: "monthly", next_date: ymd(new Date()), category: "", status: "active", source: "manual", ...defaults };
     const sel = (name, map, v) => `<select name="${name}">${Object.keys(map).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${map[k]}</option>`).join("")}</select>`;
-    modal(isNew ? "Add recurring" : it.name, `
+    modal(isNew ? (it.kind === "subscription" ? "Add subscription" : "Add recurring") : it.name, `
       <form id="rec-form" class="stack">
         ${!isNew && it.last_date ? `<div class="callout small">Last ${it.kind === "income" ? "deposit" : "charge"}: <b>${money(it.last_amount || it.amount)}</b> on ${prettyDate(it.last_date)} ${dateOnly(it.last_date).slice(0, 4)}${it.source === "auto" ? " · detected from your transactions" : ""}</div>` : ""}
-        <label class="field"><span>Name</span><input name="name" required value="${esc(it.name)}" placeholder="e.g. Netflix, Rent, Electric"></label>
+        <label class="field"><span>Name</span><input name="name" required value="${esc(it.name)}" list="common-subs" placeholder="e.g. Netflix, Rent, Electric"></label>
+        <datalist id="common-subs">${COMMON_SUBS.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
         <div class="form-grid">
           <label class="field"><span>Amount</span><input name="amount" type="number" min="0" step="0.01" required value="${it.amount}"></label>
           <label class="field"><span>Type</span>${sel("kind", { subscription: "Subscription", bill: "Bill", income: "Income" }, it.kind)}</label>
@@ -600,7 +605,7 @@
           const fd = Object.fromEntries(new FormData(form));
           const data = { name: fd.name.trim(), amount: Math.abs(Number(fd.amount) || 0), kind: fd.kind, frequency: fd.frequency, category: fd.category, next_date: fd.next_date ? fd.next_date + " 12:00:00.000Z" : "", ...extra };
           try {
-            if (isNew) await pb.collection("recurring").create({ ...data, user: pb.authStore.record.id, status: "active" });
+            if (isNew) await pb.collection("recurring").create({ ...data, user: pb.authStore.record.id, status: "active", merchant_key: it.merchant_key || "", account: it.account || "", last_date: it.last_date ? it.last_date + " 12:00:00.000Z" : "", last_amount: it.last_date ? it.amount : 0 });
             else await pb.collection("recurring").update(it.id, data);
             close(); route();
           } catch (err) { fail(err); }
@@ -613,6 +618,87 @@
         on("#r-del", async () => { close(); if (await confirmBox(`Delete “${it.name}”?`)) { try { await pb.collection("recurring").delete(it.id); route(); } catch (err) { fail(err); } } });
       },
     });
+  }
+
+  // ------------------------------------------------------------------ subscriptions
+  const subState = { view: "monthly" };
+  const CYCLE = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly" };
+  const PER = { weekly: "wk", biweekly: "2 wks", monthly: "mo", quarterly: "qtr", yearly: "yr" };
+
+  async function renderSubscriptions(view) {
+    const [s] = await Promise.all([api("/api/budget/subscriptions"), loadCategories(), loadAccounts()]);
+    const yr = subState.view === "yearly";
+    const unit = yr ? "yr" : "mo";
+    const cost = (x) => (yr ? x.yearly : x.monthly);
+    const active = s.subscriptions.filter((x) => x.status === "active").sort((a, b) => b.monthly - a.monthly);
+    const cancelled = s.subscriptions.filter((x) => x.status === "cancelled");
+    const t = s.totals;
+    const renewCell = (x) => {
+      if (!x.next_renewal) return `<span class="muted small">—</span>`;
+      const soon = x.days_until <= 7 || (x.frequency === "yearly" && x.days_until <= 30);
+      return `<div>${prettyDate(x.next_renewal)}${x.frequency === "yearly" ? " " + x.next_renewal.slice(0, 4) : ""}</div><div class="small ${soon ? "" : "muted"}">${soon ? `<span class="pill warn-p">${esc(dueText(x.days_until))}</span>` : esc(dueText(x.days_until))}</div>`;
+    };
+    const row = (x) => {
+      const c = catById(x.category);
+      const pc = x.price_change;
+      return `<tr class="click sub-row" data-id="${x.id}">
+        <td><div class="row" style="flex-wrap:nowrap">${avatar(x.name, c && c.icon)}<div class="grow"><div class="t-name">${esc(x.name)}</div>
+          ${pc ? `<span class="pill ${pc.to > pc.from ? "err" : "ok"}" title="Changed on ${esc(prettyDate(pc.date))}">${pc.to > pc.from ? "▲" : "▼"}<span class="hide-sm"> price ${pc.to > pc.from ? "up" : "down"}</span> ${money(pc.from)} → ${money(pc.to)}</span>` : `<span class="small muted">${x.charges ? `${x.charges} charge${x.charges === 1 ? "" : "s"} found` : "added manually"}</span>`}</div></div></td>
+        <td class="hide-sm"><span class="pill">${CYCLE[x.frequency]}</span></td>
+        <td class="hide-sm">${renewCell(x)}</td>
+        <td class="right num">${money(x.amount)}<span class="muted small">/${PER[x.frequency]}</span></td>
+        <td class="right num"><b>${money(cost(x))}</b><span class="muted small">/${unit}</span></td>
+      </tr>`;
+    };
+
+    view.innerHTML = `
+      <div class="stack">
+        <div class="grid kpis">
+          <div class="card kpi"><div class="label">Subscriptions cost</div><div class="value num">${money(yr ? t.yearly : t.monthly)}<span class="muted" style="font-size:14px">/${unit}</span></div><div class="sub">${yr ? money(t.monthly) + " a month" : money(t.yearly) + " a year"}</div></div>
+          <div class="card kpi"><div class="label">Active</div><div class="value num">${t.count}</div><div class="sub">${active.filter((x) => x.frequency === "yearly").length} billed yearly</div></div>
+          <div class="card kpi"><div class="label">Renewing in 30 days</div><div class="value num">${money(t.renewing_30d)}</div><div class="sub">${active.filter((x) => x.days_until != null && x.days_until <= 30).length} renewal(s)</div></div>
+          <div class="card kpi"><div class="label">Saved by cancelling</div><div class="value num pos">${money(t.cancelled_savings_yearly)}<span class="muted" style="font-size:14px">/yr</span></div><div class="sub">${cancelled.length} cancelled</div></div>
+        </div>
+
+        ${s.suggestions.length ? `<div class="card sugg">
+          <div class="card-h"><h2>Possible subscriptions found</h2><span class="pill">${s.suggestions.length}</span><div class="spacer"></div><span class="small muted">From your transactions, not tracked yet</span></div>
+          ${s.suggestions.map((g, i) => `<div class="tx-line">${avatar(g.name)}<div class="grow"><div class="t-name">${esc(g.name)}</div>
+              <div class="small muted">${money(g.amount)} · last charged ${prettyDate(g.last_date)} ${g.last_date.slice(0, 4)} · looks ${CYCLE[g.frequency].toLowerCase()}${g.charges > 1 ? ` · ${g.charges} charges` : ""}</div></div>
+              <button class="btn sm" data-ignore="${i}">Not a subscription</button><button class="btn sm primary" data-track="${i}">Track</button></div>`).join("")}
+        </div>` : ""}
+
+        <div class="card">
+          <div class="card-h"><h2>Your subscriptions</h2><div class="spacer"></div>
+            <div class="seg">${[["monthly", "Monthly"], ["yearly", "Yearly"]].map(([k, l]) => `<button data-v="${k}" class="${subState.view === k ? "on" : ""}">${l}</button>`).join("")}</div>
+            <button class="btn primary" id="sub-add">+ Add subscription</button></div>
+          ${active.length ? `<div class="table-wrap"><table>
+              <thead><tr><th>Service</th><th class="hide-sm">Billing</th><th class="hide-sm">Next renewal</th><th class="right">Price</th><th class="right">Per ${yr ? "year" : "month"}</th></tr></thead>
+              <tbody>${active.map(row).join("")}</tbody>
+              <tfoot><tr><td colspan="3" class="hide-sm"><b>Total</b></td><td class="show-sm"><b>Total</b></td><td class="right num" colspan="2"><b>${money(yr ? t.yearly : t.monthly)}</b><span class="muted small">/${unit}</span></td></tr></tfoot>
+            </table></div>`
+            : `<div class="empty">No subscriptions tracked yet. ${s.suggestions.length ? "Track the ones found above, or add" : "Add"} your streaming, software and membership plans so you can see what they cost each month and year.</div>`}
+        </div>
+
+        ${cancelled.length ? `<div class="card"><div class="card-h"><h2>Cancelled</h2><div class="spacer"></div><span class="small muted">Saving ${money(t.cancelled_savings_yearly)} a year</span></div>
+          <div class="table-wrap"><table><tbody>${cancelled.map((x) => `<tr class="click sub-row" data-id="${x.id}"><td><div class="row" style="flex-wrap:nowrap">${avatar(x.name)}<div class="grow"><div class="t-name">${esc(x.name)}</div><div class="small muted">${CYCLE[x.frequency]} · ${money(x.amount)}${x.last_date ? ` · last charged ${prettyDate(x.last_date)}` : ""}</div></div></div></td><td class="right num pos">+${money(x.yearly)}<span class="muted small">/yr</span></td></tr>`).join("")}</tbody></table></div></div>` : ""}
+        <p class="small muted">Subscriptions also appear under <a href="#/recurring">Recurring</a> and count toward your budget. Keel can't cancel services for you; mark one cancelled here after you cancel it with the provider.</p>
+      </div>`;
+
+    $$(".seg button", view).forEach((b) => (b.onclick = () => { subState.view = b.dataset.v; route(); }));
+    const byId = Object.fromEntries(s.subscriptions.map((x) => [x.id, x]));
+    $$(".sub-row", view).forEach((el) => (el.onclick = () => editRecurring(byId[el.dataset.id])));
+    $("#sub-add").onclick = () => editRecurring(null, { kind: "subscription" });
+    $$("[data-track]", view).forEach((b) => (b.onclick = () => {
+      const g = s.suggestions[+b.dataset.track];
+      editRecurring(null, { kind: "subscription", name: g.name, amount: g.amount, frequency: g.frequency, next_date: g.next_date, category: g.category, merchant_key: g.merchant_key, account: g.account, last_date: g.last_date });
+    }));
+    $$("[data-ignore]", view).forEach((b) => (b.onclick = async () => {
+      const g = s.suggestions[+b.dataset.ignore];
+      try {
+        await pb.collection("recurring").create({ user: pb.authStore.record.id, name: g.name, merchant_key: g.merchant_key, amount: g.amount, kind: "subscription", frequency: g.frequency, status: "ignored" });
+        toast(`Won't suggest ${g.name} again`); route();
+      } catch (err) { fail(err); }
+    }));
   }
 
   // ------------------------------------------------------------------ net worth

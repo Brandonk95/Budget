@@ -5,6 +5,7 @@
 - **Bank sync** through [SimpleFIN Bridge](https://beta-bridge.simplefin.org) (about $15/year). Balances and transactions sync every 6 hours. You can also import CSV files from any bank.
 - **One monthly budget, Rocket Money style.** Set a single spending number, give the categories you care about their own slice, and everything else shares the rest. A guided "Create budget" setup suggests amounts from your recent spending. Categories can roll unspent money (or overspending) into next month. The budget page shows what's left to spend, a safe amount per day, and this month's bills marked paid or due.
 - **Recurring bills, subscriptions and income** are found automatically from your history (weekly to yearly). A calendar shows what's due, and payments are matched as they post. Mark anything cancelled or "not recurring", or add your own. Optional email reminders go out 3 days before a bill is due.
+- **Subscription tracker**: all your monthly and yearly subscriptions with their cost per month or per year, next renewal dates, price-increase flags and how much you save by cancelling. Subscriptions it spots in your transactions (including yearly ones charged only once) are suggested so you can track them in one click.
 - **Spending** breakdown by category and merchant, with a 6-month trend.
 - **Net worth** over time: assets minus credit cards and loans, recorded daily (earlier history is estimated from transactions).
 - **Dashboard**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
@@ -160,6 +161,7 @@ assets/          app icon (used by CasaOS)
 | `GET /api/budget/insights?month=YYYY-MM` | Budget analysis for one month |
 | `GET /api/budget/spending?month=YYYY-MM` | Spending by category and merchant, plus a 6-month trend |
 | `GET /api/budget/recurring?month=YYYY-MM` | Recurring items, the month's calendar, upcoming bills and totals |
+| `GET /api/budget/subscriptions` | Subscriptions with renewals and price changes, plus untracked suggestions |
 | `POST /api/budget/recurring/detect` | Rescans transactions for recurring charges |
 | `GET /api/budget/networth?days=90` | Net worth now and over time |
 | `POST /api/budget/digest` | Emails you the weekly summary now |

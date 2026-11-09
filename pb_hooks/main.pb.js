@@ -205,6 +205,11 @@ routerAdd("GET", "/api/budget/recurring", (e) => {
   return e.json(200, recurring.list(e.app, e.auth.id, e.request.url.query().get("month")));
 }, $apis.requireAuth("users"));
 
+routerAdd("GET", "/api/budget/subscriptions", (e) => {
+  const recurring = require(`${__hooks}/lib/recurring.js`);
+  return e.json(200, recurring.subscriptions(e.app, e.auth.id));
+}, $apis.requireAuth("users"));
+
 routerAdd("POST", "/api/budget/recurring/detect", (e) => {
   const recurring = require(`${__hooks}/lib/recurring.js`);
   return e.json(200, recurring.detect(e.app, e.auth.id));

@@ -50,7 +50,10 @@ function normalizePayee(s) {
 }
 
 function prettyName(s) {
-  const t = String(s || "").replace(/[#*]?\d{3,}.*$/, "").replace(/\s+/g, " ").trim();
+  let t = String(s || "").replace(/[#*]?\d{3,}.*$/, "").replace(/\s+/g, " ").trim();
+  // "AMAZON PRIME*MEMBERSHIP" -> "AMAZON PRIME"
+  const star = t.indexOf("*");
+  if (star >= 3) t = t.slice(0, star).trim();
   if (!t) return "Recurring";
   if (t === t.toUpperCase()) return t.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
   return t;
@@ -93,9 +96,13 @@ function analyze(group, today) {
   if (daysBetween(lastDay, today) > STEP_DAYS[fr.f] * 2 + 7) return null;
 
   const lastTx = byDay[lastDay][0];
+  // when the last two charges match, that's the current price (subscriptions after a price change);
+  // otherwise average them (variable bills like electric)
+  const n = amounts.length;
+  const current = Math.abs(amounts[n - 1] - amounts[n - 2]) < 0.01 ? amounts[n - 1] : recent.reduce((s, a) => s + a, 0) / recent.length;
   return {
     frequency: fr.f,
-    amount: util.round2(recent.reduce((s, a) => s + a, 0) / recent.length),
+    amount: util.round2(current),
     last_amount: util.round2(amounts[amounts.length - 1]),
     last_date: lastDay,
     next_date: next,
@@ -287,4 +294,88 @@ function list(app, userId, monthKey) {
   };
 }
 
-module.exports = { detect, list, normalizePayee, occurrences, PER_MONTH };
+// Subscription tracker: every subscription with its billing cycle, next renewal,
+// monthly/yearly cost and price changes, plus likely subscriptions not tracked yet.
+function subscriptions(app, userId) {
+  const today = todayDay();
+  const base = list(app, userId, util.currentMonth());
+  const txs = loadTx(app, userId, msDay(dayMs(today) - 400 * DAY));
+  const byKey = {};
+  for (const t of txs) {
+    if (t.amount >= 0) continue;
+    const k = normalizePayee(t.payee || t.description);
+    if (!k || k.length < 3) continue;
+    (byKey[k] = byKey[k] || []).push(t);
+  }
+
+  const subs = base.items.filter((x) => x.kind === "subscription").map((it) => {
+    it.yearly = util.round2(it.amount * PER_MONTH[it.frequency] * 12);
+    if (it.status === "active") {
+      const next = occurrences(it, msDay(dayMs(today) - 5 * DAY), msDay(dayMs(today) + 400 * DAY))
+        .filter((d) => !(it.merchant_key && matchPaid(d, it, { [it.merchant_key + "|out"]: byKey[it.merchant_key] || [] })));
+      if (next.length) { it.next_renewal = next[0]; it.days_until = daysBetween(today, next[0]); }
+    }
+    // price change: the latest price vs the last different price, if it changed in the past ~6 months
+    const charges = (byKey[it.merchant_key] || []).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    it.charges = charges.length;
+    if (charges.length >= 2) {
+      const last = Math.abs(charges[charges.length - 1].amount);
+      let j = charges.length - 2;
+      while (j >= 0 && Math.abs(Math.abs(charges[j].amount) - last) < 0.01) j--;
+      if (j >= 0) {
+        const prev = Math.abs(charges[j].amount);
+        const since = charges[j + 1].date.slice(0, 10);
+        const rel = Math.abs(last - prev) / prev;
+        if (Math.abs(last - prev) >= 0.5 && rel >= 0.02 && rel <= 1 && daysBetween(since, today) <= 190) {
+          it.price_change = { from: util.round2(prev), to: util.round2(last), date: since };
+        }
+      }
+    }
+    return it;
+  });
+
+  // likely subscriptions: known subscription merchants with no recurring entry at all
+  const known = {};
+  for (const it of base.items) known[it.merchant_key] = true;
+  const suggestions = [];
+  for (const k in byKey) {
+    if (known[k] || !SUBS.test(k)) continue;
+    const g = byKey[k].slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    const last = g[g.length - 1];
+    const days = {};
+    for (const t of g) days[t.date.slice(0, 10)] = true;
+    const ds = Object.keys(days).sort();
+    let frequency = "monthly";
+    if (ds.length >= 2) {
+      const ivs = [];
+      for (let i = 1; i < ds.length; i++) ivs.push(daysBetween(ds[i - 1], ds[i]));
+      const med = median(ivs);
+      const fr = FREQS.find((x) => med >= x.min && med <= x.max);
+      if (fr) frequency = fr.f; else if (med > 200) frequency = "yearly";
+    } else if (daysBetween(last.date.slice(0, 10), today) > 40) {
+      frequency = "yearly";
+    }
+    // a lone monthly-looking charge from long ago is probably gone
+    if (frequency !== "yearly" && daysBetween(last.date.slice(0, 10), today) > STEP_DAYS[frequency] * 2 + 7) continue;
+    suggestions.push({
+      merchant_key: k, name: prettyName(last.payee || last.description), amount: util.round2(Math.abs(last.amount)),
+      last_date: last.date.slice(0, 10), next_date: step(last.date.slice(0, 10), frequency, 1), frequency,
+      charges: ds.length, category: last.category || "", account: last.account,
+    });
+  }
+  suggestions.sort((a, b) => b.amount * PER_MONTH[b.frequency] - a.amount * PER_MONTH[a.frequency]);
+
+  const active = subs.filter((s) => s.status === "active");
+  const cancelled = subs.filter((s) => s.status === "cancelled");
+  const monthly = active.reduce((s, x) => s + x.monthly, 0);
+  return {
+    today, subscriptions: subs, suggestions,
+    totals: {
+      count: active.length, monthly: util.round2(monthly), yearly: util.round2(monthly * 12),
+      renewing_30d: util.round2(active.filter((s) => s.days_until != null && s.days_until <= 30).reduce((s, x) => s + x.amount, 0)),
+      cancelled_savings_yearly: util.round2(cancelled.reduce((s, x) => s + x.yearly, 0)),
+    },
+  };
+}
+
+module.exports = { detect, list, subscriptions, normalizePayee, occurrences, PER_MONTH };

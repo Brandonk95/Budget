@@ -354,3 +354,13 @@ details.manage summary { cursor: pointer; }
   .cal-dots { display: flex; flex-wrap: wrap; }
   .big { font-size: 26px; }
 }
+
+/* subscriptions */
+.show-sm { display: none; }
+.pill.warn-p { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.sugg { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+.sugg .tx-line { flex-wrap: wrap; }
+tfoot td { border-top: 2px solid var(--border); border-bottom: 0; padding-top: 10px; }
+.sub-row .pill { margin-top: 2px; }
+@media (max-width: 760px) { .show-sm { display: table-cell; } .sugg .tx-line .grow { flex-basis: calc(100% - 50px); } }
+@media (max-width: 760px) { .sub-row td, .sub-row + tr td, table thead th, tfoot td { padding-left: 4px; padding-right: 4px; } }
