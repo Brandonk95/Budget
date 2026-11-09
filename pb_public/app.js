@@ -82,7 +82,13 @@
   const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
 
   // a simple keel/hull mark
-  const LOGO = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18l-3.5 7.5a3 3 0 0 1-2.7 1.5H9.2a3 3 0 0 1-2.7-1.5z"/><path d="M12 9V3M12 18v3"/></svg>';
+  const LOGO = '<img src="brand/favicon-32.png" alt="" width="28" height="28">';
+  // The wordmark is the transparent logo used as a CSS mask, so it takes the theme's ink color.
+  // If APP_NAME was changed, fall back to the icon plus the configured name.
+  const isKeel = () => (state.status.app_name || "Keel") === "Keel";
+  const brandMark = () => isKeel()
+    ? `<div class="brand"><span class="wordmark" role="img" aria-label="Keel"></span></div>`
+    : `<div class="brand"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>`;
 
   // ------------------------------------------------------------------ state
   const state = {
@@ -118,8 +124,8 @@
     document.title = state.status.app_name;
     $("#app").innerHTML = `
       <div class="auth"><div class="card">
-        <div class="brand" style="padding:0 0 6px"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>
-        <p class="muted" style="margin:0">Track your accounts, spend with intention.</p>
+        ${isKeel() ? `<img class="auth-logo" src="brand/logo.png" alt="Keel" width="760" height="431">` : `<div class="brand" style="padding:0 0 6px"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>`}
+        <p class="muted" style="margin:0;text-align:center">Keep your money on an even keel.</p>
         <div class="tabs">
           <button data-m="login" class="${mode === "login" ? "on" : ""}">Sign in</button>
           <button data-m="register" class="${mode === "register" ? "on" : ""}">Create account</button>
@@ -180,7 +186,7 @@
     $("#app").innerHTML = `
       <div class="shell">
         <aside class="side">
-          <div class="brand"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>
+          ${brandMark()}
           <nav class="nav">${Object.keys(ROUTES).map((k) => `<a href="#/${k}" data-r="${k}">${icon(k)}<span>${ROUTES[k].title}</span></a>`).join("")}</nav>
           <div class="foot">${esc(pb.authStore.record.email)}<br><span class="muted">v${esc(state.status.version || "")}</span></div>
         </aside>

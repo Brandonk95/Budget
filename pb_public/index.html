@@ -3,14 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#2f6fed">
+  <meta name="theme-color" content="#0d58dc">
   <title>Keel</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%232f6fed'/><g fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'><path d='M6 13h20l-4 9a3 3 0 0 1-2.7 1.7h-6.6A3 3 0 0 1 10 22z'/><path d='M16 13V6'/></g></svg>">
+  <link rel="icon" type="image/png" sizes="32x32" href="brand/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="brand/icon-192.png">
+  <link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="description" content="Keel: self-hosted budgeting with bank sync.">
+  <meta property="og:title" content="Keel">
+  <meta property="og:description" content="Self-hosted budgeting with bank sync.">
+  <meta property="og:image" content="brand/logo.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app"><div class="boot">Loading…</div></div>
+  <div id="app"><div class="boot"><img src="brand/icon-192.png" alt="Keel" width="56" height="56" style="border-radius:14px"></div></div>
   <div id="modal-root"></div>
   <div id="toasts"></div>
   <script src="vendor/pocketbase.umd.js"></script>

@@ -147,7 +147,8 @@ pb_hooks/        server logic (JS, runs inside PocketBase)
   lib/notify.js     SMTP emails
   lib/rules.js      auto-categorization and default categories
 pb_public/       web app (vanilla JS + PocketBase SDK)
-assets/          app icon (used by CasaOS)
+assets/          icon.png (CasaOS) and brand/ originals (favicon, logo, transparent logo)
+pb_public/brand/ web-sized favicon, logo and wordmark
 ```
 
 ### Custom API (all require a signed-in user)

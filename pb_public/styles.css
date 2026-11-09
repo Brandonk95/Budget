@@ -5,12 +5,13 @@
   --border: #e3e6eb;
   --text: #1d2330;
   --muted: #6b7383;
-  --primary: #2f6fed;
+  --primary: #0d58dc;
+  --brand-ink: #0d58dc;
   --primary-ink: #ffffff;
   --good: #1f9d55;
   --warn: #d48806;
   --bad: #d64545;
-  --info: #2f6fed;
+  --info: #0d58dc;
   --needs: #2f6fed;
   --wants: #a855f7;
   --savings: #1f9d55;
@@ -27,7 +28,8 @@
     --border: #2a303c;
     --text: #e6e9ef;
     --muted: #949cab;
-    --primary: #5b8cff;
+    --primary: #4d8bff;
+    --brand-ink: #ffffff;
     --good: #3ccf7f;
     --warn: #f0b429;
     --bad: #ff6b6b;
@@ -73,7 +75,15 @@ h3 { font-size: 14px; }
   padding: 20px 12px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column;
 }
 .brand { display: flex; gap: 10px; align-items: center; font-weight: 700; font-size: 16px; padding: 0 8px 20px; }
-.brand .logo { width: 28px; height: 28px; border-radius: 8px; background: var(--primary); color: #fff; display: grid; place-items: center; }
+.brand .logo { width: 28px; height: 28px; border-radius: 8px; overflow: hidden; flex: none; }
+.brand .logo img { display: block; width: 100%; height: 100%; }
+/* transparent wordmark as a mask: blue on light, white on dark */
+.wordmark {
+  display: block; width: 104px; aspect-ratio: 640 / 243; background-color: var(--brand-ink);
+  -webkit-mask: url("brand/logo-mark.png") center / contain no-repeat;
+  mask: url("brand/logo-mark.png") center / contain no-repeat;
+}
+.auth-logo { display: block; width: calc(100% + 56px); height: auto; margin: -28px -28px 16px; border-radius: 12px 12px 0 0; }
 .nav a {
   display: flex; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 8px; color: var(--muted); font-weight: 500;
 }

@@ -11,9 +11,10 @@ function layout(app, title, bodyHtml) {
   const name = app.settings().meta.appName;
   return `<!doctype html><html><body style="margin:0;background:#f4f5f7;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1d2330">
 <div style="max-width:560px;margin:0 auto;padding:24px">
+${name === "Keel" && /^https?:\/\//.test(url) ? `<div style="text-align:center;margin:0 0 16px"><img src="${util.esc(url.replace(/\/$/, ""))}/brand/logo.png" alt="Keel" width="150" style="border-radius:10px;display:inline-block"></div>` : ""}
 <div style="background:#fff;border-radius:12px;padding:24px;border:1px solid #e3e6eb">
 <h2 style="margin:0 0 16px;font-size:20px">${util.esc(title)}</h2>${bodyHtml}
-<p style="margin:24px 0 0"><a href="${util.esc(url)}" style="background:#2f6fed;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Open ${util.esc(name)}</a></p>
+<p style="margin:24px 0 0"><a href="${util.esc(url)}" style="background:#0d58dc;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;display:inline-block">Open ${util.esc(name)}</a></p>
 </div><p style="color:#7a8291;font-size:12px;text-align:center">You can change email preferences in Settings.</p></div></body></html>`;
 }
 
