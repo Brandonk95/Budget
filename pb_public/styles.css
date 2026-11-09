@@ -504,3 +504,18 @@ tfoot td { border-top: 1px solid var(--border-strong); border-bottom: 0; padding
   .bar > i, .split i, .legend span::before { forced-color-adjust: none; }
   .nav a.active { outline: 2px solid CanvasText; }
 }
+
+/* ---------- installed app (PWA) ---------- */
+.install-banner { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 16px; border-color: color-mix(in srgb, var(--primary) 35%, var(--border)); }
+.install-banner img { border-radius: 10px; flex: none; }
+@media (display-mode: standalone) {
+  /* no browser bar: keep content clear of the notch / status bar */
+  main { padding-top: calc(24px + env(safe-area-inset-top)); }
+  .side { padding-top: calc(24px + env(safe-area-inset-top)); }
+  body { overscroll-behavior-y: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  input, textarea, .num, td, .t-name, p { -webkit-user-select: text; user-select: text; }
+}
+@media (display-mode: standalone) and (max-width: 760px) {
+  main { padding-top: calc(16px + env(safe-area-inset-top)); }
+  .side { padding-top: 6px; }
+}

@@ -1,5 +1,5 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "released": "2026-11-09",
-  "motd": "A calmer, cleaner Keel: new colors, the Inter typeface, simpler icons and a refined dark mode. On phones, the main pages now sit in a bottom bar with everything else under More. Money, on course."
+  "motd": "Keel is now an app you can install. On Android, tap Install on the Overview page or in Settings. On iPhone, tap Share, then Add to Home Screen. It opens full screen from its own icon and even opens offline."
 }

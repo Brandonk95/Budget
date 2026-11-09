@@ -13,6 +13,7 @@
 - **Auto-categorization**: your own rules ("contains *kroger* → Groceries") plus built-in guesses for common merchants. When you change a transaction's category, the app offers to turn it into a rule.
 - **Goals** with the monthly amount needed to hit each target date.
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
+- **Installable app** for phones and desktops: home-screen icon, full-screen window, opens offline.
 - **Calm, accessible design**: Keel Blue on cool neutrals, the Inter typeface, Lucide icons, a dark mode of its own, a phone layout with a bottom bar, and reduced-motion support.
 - **Email over SMTP**: alerts when a budget passes your warning threshold or goes over it, alerts for large transactions, a failed-sync notice, a weekly summary, plus password reset and verification emails.
 
@@ -112,6 +113,16 @@ The popup shows once per version for each user, and only if that user has **Sett
 - **Pin a version** by changing the `keel` image to `ghcr.io/brandonk95/keel:1.0.0`.
 
 Watchtower only manages containers in this stack. It is scoped with `WATCHTOWER_SCOPE=keel`, so other apps on the host aren't touched. It needs the Docker socket to restart containers, which gives it full control of Docker on that host. That's normal for Watchtower, but worth knowing.
+
+## Installing the app on your phone
+
+Keel is an installable web app (PWA). Once installed it has its own home-screen icon, opens full screen without the browser bar, and still opens when you're offline (it shows your data again as soon as you reconnect).
+
+- **Android (Chrome, Edge, Samsung Internet):** open Keel and tap **Install** on the Overview banner or under **Settings → Install the app**. You can also use the browser menu → **Install app**.
+- **iPhone / iPad (Safari):** tap **Share**, then **Add to Home Screen**.
+- **Desktop (Chrome, Edge):** click the install icon in the address bar, or use **Settings → Install the app**.
+
+Phones only allow a full install from an **https://** address (see [Exposing it to the internet](#exposing-it-to-the-internet); a Tailscale or Cloudflare Tunnel address also works). On a plain `http://` LAN address, iPhones can still add it to the home screen, but Android only creates a browser shortcut.
 
 ## Backups
 

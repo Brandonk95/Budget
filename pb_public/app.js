@@ -430,7 +430,7 @@
     }).join("");
 
     view.innerHTML = `
-      <div class="stack">
+      <div class="stack">${installBanner()}
         <div class="grid dash-top">
           <div class="card hero">
             <div class="card-h"><div><div class="label">Spent ${d.is_current ? "this month" : "in " + esc(monthLabel(state.month))}</div>
@@ -443,7 +443,7 @@
             <div class="card">
               <div class="card-h"><h2>Left to spend</h2><div class="spacer"></div><a href="#/budget" class="small">Budget →</a></div>
               ${d.budgeted > 0 ? `
-                <div class="big num" style="color:${left < 0 ? "var(--bad)" : "var(--text)"}">${money(left)}</div>
+                <div class="big num" style="color:${left < 0 ? "var(--bad-text)" : "var(--text)"}">${money(left)}</div>
                 <div class="bar ${barClass(Math.round((d.spent / d.budgeted) * 100))}" style="margin:10px 0 6px"><i style="width:${usedPct}%"></i></div>
                 <div class="row small muted"><span>${money(d.spent)} of ${money(d.budgeted)}</span><div class="spacer"></div>${d.is_current && d.remaining_days ? `<span>${money(d.safe_per_day)}/day · ${d.remaining_days} days left</span>` : ""}</div>`
               : `<p class="muted" style="margin:0 0 10px">Set a monthly budget to see what's left to spend.</p><a class="btn primary sm" href="#/budget">Create a budget</a>`}
@@ -483,6 +483,7 @@
       </div>`;
     const byId = Object.fromEntries(recent.items.map((t) => [t.id, t]));
     $$(".tx-line", view).forEach((el) => (el.onclick = () => editTx(byId[el.dataset.id])));
+    bindInstallBanner(view);
   }
 
   // ------------------------------------------------------------------ spending
@@ -1551,6 +1552,7 @@
     view.innerHTML = `
       <div class="grid two">
         <div class="stack">
+          ${installCard()}
           <div class="card">
             <div class="card-h"><h2>Email alerts</h2><div class="spacer"></div><span class="pill ${state.status.smtp ? "ok" : "err"}">${state.status.smtp ? "SMTP connected" : "SMTP not configured"}</span></div>
             ${state.status.smtp ? "" : `<p class="small muted">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
@@ -1596,6 +1598,7 @@
         toast("Preferences saved");
       } catch (err) { fail(err); }
     };
+    const ia = $("#install-app"); if (ia) ia.onclick = runInstall;
     $("#digest-now").onclick = async () => { try { const r = await api("/api/budget/digest", { method: "POST" }); toast("Sent to " + r.to); } catch (err) { fail(err); } };
     $("#logout").onclick = () => { pb.authStore.clear(); location.hash = ""; renderAuth(); };
     const rp = $("#reset-pw"); if (rp) rp.onclick = async () => { try { await pb.collection("users").requestPasswordReset(me.email); toast("Reset link sent"); } catch (err) { fail(err); } };
@@ -1671,6 +1674,70 @@
     else if (document.hidden) location.reload(); // pick up the new UI quietly
   }
 
+  // ------------------------------------------------------------------ install (PWA)
+  // Android/desktop Chrome and Edge fire `beforeinstallprompt`; iOS needs Share > Add to Home Screen.
+  const install = { prompt: null };
+  const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const SHARE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Share" style="vertical-align:-3px"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>';
+
+  // "ready" (can show the install button), "ios" (show instructions), "installed", "insecure" or "unavailable".
+  function installState() {
+    if (isStandalone()) return "installed";
+    if (install.prompt) return "ready";
+    if (isIOS()) return "ios";
+    if (!window.isSecureContext) return "insecure";
+    return "unavailable";
+  }
+
+  async function runInstall() {
+    if (!install.prompt) return;
+    install.prompt.prompt();
+    const { outcome } = await install.prompt.userChoice;
+    install.prompt = null;
+    if (outcome === "accepted") toast("Keel is on your home screen");
+    if (currentRoute() === "settings" || currentRoute() === "dashboard") route();
+  }
+
+  function installCard() {
+    const st = installState();
+    const body = {
+      installed: `<p class="small muted" style="margin:0">You're using the installed app.</p>`,
+      ready: `<p class="small muted" style="margin-top:0">Add Keel to your home screen or desktop. It opens in its own window, without the browser bar.</p><button class="btn primary" id="install-app">Install Keel</button>`,
+      ios: `<p class="small muted" style="margin:0">In Safari, tap ${SHARE_ICON} <b>Share</b>, then <b>Add to Home Screen</b>. Keel opens full screen from its icon.</p>`,
+      insecure: `<p class="small muted" style="margin:0">Phones only offer to install apps from a secure (https://) address. Open Keel through your https address to install it. Until then, your browser's menu may offer <b>Add to Home Screen</b> as a shortcut.</p>`,
+      unavailable: `<p class="small muted" style="margin:0">Use your browser's menu and choose <b>Install app</b> or <b>Add to Home Screen</b>. If you don't see it, Keel may already be installed.</p>`,
+    }[st];
+    return `<div class="card"><div class="card-h"><h2>Install the app</h2><div class="spacer"></div>${st === "installed" ? `<span class="pill ok">Installed</span>` : ""}</div>${body}</div>`;
+  }
+
+  // A one-time, dismissible nudge on the Overview page for phone users.
+  function installBanner() {
+    const st = installState();
+    let dismissed = false;
+    try { dismissed = localStorage.getItem("keel_install_dismissed") === "1"; } catch (_) {}
+    if (dismissed || !(st === "ready" || st === "ios") || !matchMedia("(max-width: 760px), (pointer: coarse)").matches) return "";
+    return `<div class="card install-banner" id="install-banner"><img src="brand/icon-192.png" alt="" width="44" height="44">
+      <div class="grow"><div class="b-name">Get the Keel app</div><div class="small muted">${st === "ios" ? `Tap ${SHARE_ICON} Share, then Add to Home Screen.` : "Open Keel from your home screen, full screen."}</div></div>
+      ${st === "ready" ? `<button class="btn primary sm" id="banner-install">Install</button>` : ""}<button class="btn link" id="banner-x" aria-label="Dismiss">Not now</button></div>`;
+  }
+  function bindInstallBanner(root) {
+    const b = $("#banner-install", root); if (b) b.onclick = runInstall;
+    const x = $("#banner-x", root); if (x) x.onclick = () => { try { localStorage.setItem("keel_install_dismissed", "1"); } catch (_) {} $("#install-banner", root).remove(); };
+  }
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    install.prompt = e;
+    if (pb.authStore.isValid && (currentRoute() === "settings" || currentRoute() === "dashboard") && !$(".modal-bg")) route();
+  });
+  window.addEventListener("appinstalled", () => { install.prompt = null; });
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch((err) => console.warn("service worker", err)));
+  }
+  window.addEventListener("offline", () => toast("You're offline. Keel will catch up when you reconnect.", true));
+  window.addEventListener("online", () => { toast("Back online"); if (pb.authStore.isValid) route(); });
+
   // ------------------------------------------------------------------ boot
   async function start() {
     renderShell();
@@ -1686,7 +1753,7 @@
     loadedVersion.v = state.status.version || "";
     setInterval(pollVersion, 60 * 1000);
     if (pb.authStore.isValid) {
-      try { await pb.collection("users").authRefresh(); } catch (_) { pb.authStore.clear(); }
+      try { await pb.collection("users").authRefresh(); } catch (err) { if (err && (err.status === 401 || err.status === 403 || err.status === 404)) pb.authStore.clear(); }
     }
     if (pb.authStore.isValid) start(); else renderAuth();
   })();
