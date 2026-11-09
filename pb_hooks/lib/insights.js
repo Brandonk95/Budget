@@ -1,51 +1,9 @@
 // Budget analysis: spending vs budget, pace projection, history-based suggestions,
-// recurring-charge detection and plain-language tips.
+// recurring bills (from recurring.js), a daily spend curve and plain-language tips.
 
 const util = require(`${__hooks}/lib/util.js`);
 
 const HISTORY_MONTHS = 6;
-
-function normalizePayee(s) {
-  return String(s || "").toLowerCase()
-    .replace(/[0-9#*]+/g, " ")
-    .replace(/\b(pos|debit|purchase|ach|card|checkcard|recurring|payment|www|com|inc|llc)\b/g, " ")
-    .replace(/[^a-z& ]+/g, " ")
-    .replace(/\s+/g, " ").trim()
-    .split(" ").slice(0, 3).join(" ");
-}
-
-function detectRecurring(txs, catById) {
-  const groups = {};
-  for (const t of txs) {
-    if (t.amount >= 0) continue;
-    const cat = catById[t.category];
-    if (cat && (cat.kind === "transfer" || cat.kind === "income")) continue;
-    const key = normalizePayee(t.payee || t.description);
-    if (!key || key.length < 3) continue;
-    (groups[key] = groups[key] || []).push(t);
-  }
-  const out = [];
-  for (const key in groups) {
-    const g = groups[key].sort((a, b) => (a.date < b.date ? -1 : 1));
-    const months = {};
-    for (const t of g) months[t.date.slice(0, 7)] = true;
-    const monthCount = Object.keys(months).length;
-    if (monthCount < 3 || g.length > monthCount * 2) continue; // need ~monthly cadence
-    const amts = g.map((t) => -t.amount);
-    const mean = amts.reduce((a, b) => a + b, 0) / amts.length;
-    const sd = Math.sqrt(amts.reduce((a, b) => a + (b - mean) * (b - mean), 0) / amts.length);
-    if (mean < 1 || sd > mean * 0.15) continue;
-    const last = g[g.length - 1];
-    out.push({
-      name: last.payee || last.description,
-      amount: util.round2(mean),
-      months: monthCount,
-      last_date: last.date.slice(0, 10),
-      category: last.category || "",
-    });
-  }
-  return out.sort((a, b) => b.amount - a.amount);
-}
 
 function compute(app, userId, monthKey) {
   const r = util.monthRange(monthKey);
@@ -58,14 +16,14 @@ function compute(app, userId, monthKey) {
 
   const cats = app.findRecordsByFilter("categories", "user = {:u}", "name", 0, 0, { u: userId }).map((c) => ({
     id: c.id, name: c.getString("name"), kind: c.getString("kind"), budget: c.getFloat("budget"),
-    icon: c.getString("icon"), archived: c.getBool("archived"),
+    icon: c.getString("icon"), archived: c.getBool("archived"), rollover: c.getBool("rollover"),
   }));
   const catById = {};
   for (const c of cats) catById[c.id] = c;
 
   const txs = app.findRecordsByFilter(
     "transactions",
-    "user = {:u} && account.on_budget = true && date >= {:s} && date < {:e}",
+    "user = {:u} && account.on_budget = true && exclude = false && date >= {:s} && date < {:e}",
     "date", 0, 0, { u: userId, s: histStart, e: r.end },
   ).map((t) => ({
     id: t.id, date: t.getString("date"), amount: t.getFloat("amount"), category: t.getString("category"),
@@ -75,6 +33,14 @@ function compute(app, userId, monthKey) {
   // per month, per category net amounts
   const byMonth = {}; // month -> { income, spend, cat: {id: net}, uncat }
   const blank = () => ({ income: 0, spend: 0, needs: 0, wants: 0, savings: 0, cat: {}, uncatSpend: 0, uncatCount: 0 });
+  // daily spend for this month and last month (cumulative "spent so far" chart)
+  const prevKey = util.shiftMonth(r.key, -1);
+  const dayCur = {}, dayPrev = {};
+  const addDay = (t, v) => {
+    const m = t.date.slice(0, 7);
+    const box = m === r.key ? dayCur : m === prevKey ? dayPrev : null;
+    if (box) { const d = parseInt(t.date.slice(8, 10), 10); box[d] = (box[d] || 0) + v; }
+  };
   for (const t of txs) {
     const m = t.date.slice(0, 7);
     const b = (byMonth[m] = byMonth[m] || blank());
@@ -83,12 +49,19 @@ function compute(app, userId, monthKey) {
     if (c && c.kind === "income") { b.income += t.amount; continue; }
     if (!c) {
       if (t.amount > 0) b.income += t.amount;
-      else { b.uncatSpend += -t.amount; b.spend += -t.amount; }
+      else { b.uncatSpend += -t.amount; b.spend += -t.amount; addDay(t, -t.amount); }
       b.uncatCount++;
       continue;
     }
     b.cat[c.id] = (b.cat[c.id] || 0) + t.amount;
+    addDay(t, -t.amount);
   }
+  const cumulative = (box, n) => {
+    const out = [];
+    let run = 0;
+    for (let d = 1; d <= n; d++) { run += box[d] || 0; out.push(util.round2(run)); }
+    return out;
+  };
   for (const m in byMonth) {
     const b = byMonth[m];
     for (const id in b.cat) {
@@ -105,8 +78,13 @@ function compute(app, userId, monthKey) {
   const avg = (fn) => (pastWithData.length ? pastWithData.reduce((s, k) => s + fn(byMonth[k]), 0) / pastWithData.length : 0);
 
   const w = r.days ? elapsed / r.days : 1;
+  const prevMonth = byMonth[prevKey] || blank();
   const categories = cats.filter((c) => c.kind !== "transfer" && !c.archived).map((c) => {
     const spent = c.kind === "income" ? 0 : Math.max(0, -(cur.cat[c.id] || 0));
+    // rollover: last month's leftover (or overspend) carries into this month
+    const carry = c.rollover && c.budget > 0 && c.kind !== "income"
+      ? util.round2(c.budget - Math.max(0, -(prevMonth.cat[c.id] || 0))) : 0;
+    const available = Math.max(0, c.budget + carry);
     const avg3 = avg((b) => Math.max(0, -(b.cat[c.id] || 0)));
     let projected = spent;
     if (isCurrent && c.kind !== "income") {
@@ -119,18 +97,36 @@ function compute(app, userId, monthKey) {
     }
     const suggested = avg3 > 0 ? Math.ceil(avg3 / 5) * 5 : 0;
     return {
-      id: c.id, name: c.name, kind: c.kind, icon: c.icon, budget: c.budget,
-      spent: util.round2(spent), remaining: util.round2(c.budget - spent),
-      pct: c.budget > 0 ? Math.round((spent / c.budget) * 100) : null,
+      id: c.id, name: c.name, kind: c.kind, icon: c.icon, budget: c.budget, rollover: c.rollover,
+      carry, available: util.round2(available),
+      spent: util.round2(spent), remaining: util.round2(available - spent),
+      pct: c.budget > 0 ? Math.round((spent / Math.max(available, 0.01)) * 100) : null,
       projected: util.round2(projected), avg3: util.round2(avg3), suggested,
     };
   });
 
   const spendCats = categories.filter((c) => c.kind !== "income");
-  const totalBudget = spendCats.reduce((s, c) => s + c.budget, 0);
+  // Rocket Money-style: one overall budget; category budgets carve out pieces and
+  // "Everything else" covers spending in categories without their own budget.
+  const catBudget = spendCats.filter((c) => c.budget > 0).reduce((s, c) => s + c.available, 0);
+  let incomeOverride = 0, budgetSetting = 0;
+  try {
+    const u = app.findRecordById("users", userId);
+    incomeOverride = u.getFloat("income_override");
+    budgetSetting = u.getFloat("budget_total");
+  } catch (_) {}
+  const totalBudget = Math.max(budgetSetting, catBudget);
+  const elseSpent = spendCats.filter((c) => !(c.budget > 0)).reduce((s, c) => s + c.spent, 0) + cur.uncatSpend;
+  const elseBudget = Math.max(0, totalBudget - catBudget);
+  const everythingElse = {
+    budget: util.round2(elseBudget), spent: util.round2(elseSpent), remaining: util.round2(elseBudget - elseSpent),
+    pct: elseBudget > 0 ? Math.round((elseSpent / elseBudget) * 100) : null,
+    avg3: util.round2(avg((b) => spendCats.filter((c) => !(c.budget > 0)).reduce((s, c) => s + Math.max(0, -(b.cat[c.id] || 0)), 0) + b.uncatSpend)),
+  };
+  const avgSpend = avg((b) => b.spend);
   const income = cur.income;
   const avgIncome = avg((b) => b.income);
-  const expectedIncome = Math.max(income, avgIncome);
+  const expectedIncome = incomeOverride > 0 ? incomeOverride : Math.max(income, avgIncome);
   const spent = cur.spend;
   const projectedSpend = spendCats.reduce((s, c) => s + c.projected, 0) + cur.uncatSpend;
   const budgetLeft = totalBudget - spent;
@@ -145,8 +141,16 @@ function compute(app, userId, monthKey) {
     savings_pct: Math.round(((expectedIncome - cur.needs - cur.wants) / base) * 100),
   };
 
-  const recurring = detectRecurring(txs, catById);
-  const recurringTotal = recurring.reduce((s, x) => s + x.amount, 0);
+  let bills = { expenses: 0, subscriptions: 0, bills: 0, income: 0, due_this_month: 0, paid_this_month: 0, remaining_this_month: 0 };
+  let recurringCount = 0;
+  let billList = [];
+  try {
+    const rec = require(`${__hooks}/lib/recurring.js`).list(app, userId, r.key);
+    bills = rec.totals;
+    recurringCount = rec.items.filter((x) => x.status === "active" && x.kind !== "income").length;
+    billList = rec.calendar.filter((c) => c.kind !== "income");
+  } catch (err) { app.logger().error("recurring list", "error", util.errMsg(err)); }
+  const recurringTotal = bills.expenses;
 
   const trend = [];
   for (let i = 5; i >= 0; i--) {
@@ -159,14 +163,20 @@ function compute(app, userId, monthKey) {
   const tips = [];
   const money = util.money;
   for (const c of spendCats) {
-    if (c.budget > 0 && c.spent > c.budget) {
-      tips.push({ level: "bad", text: `${c.icon} ${c.name} is over budget by ${money(c.spent - c.budget)}.` });
-    } else if (isCurrent && c.budget > 0 && c.projected > c.budget * 1.05) {
-      tips.push({ level: "warn", text: `${c.icon} ${c.name} is on pace for ${money(c.projected)} vs a ${money(c.budget)} budget — ${money(Math.max(0, c.budget - c.spent) / Math.max(1, remainingDays))}/day keeps you on track.` });
+    if (c.budget > 0 && c.spent > c.available) {
+      tips.push({ level: "bad", text: `${c.icon} ${c.name} is over budget by ${money(c.spent - c.available)}.` });
+    } else if (isCurrent && c.budget > 0 && c.projected > c.available * 1.05) {
+      tips.push({ level: "warn", text: `${c.icon} ${c.name} is on pace for ${money(c.projected)} vs ${money(c.available)} budgeted. ${money(Math.max(0, c.available - c.spent) / Math.max(1, remainingDays))}/day keeps you on track.` });
     }
-    if (c.budget === 0 && c.spent > 0) {
+    if (c.budget === 0 && c.spent > 0 && totalBudget === 0) {
       tips.push({ level: "info", text: `${c.icon} ${c.name} has ${money(c.spent)} spent but no budget. Suggested: ${money(c.suggested || Math.ceil(c.spent / 5) * 5)}.` });
     }
+  }
+  if (everythingElse.budget > 0 && everythingElse.spent > everythingElse.budget) {
+    tips.push({ level: "bad", text: `“Everything else” is over by ${money(everythingElse.spent - everythingElse.budget)}. Give the biggest categories their own budget so you can see where it's going.` });
+  }
+  if (totalBudget === 0 && avgSpend > 0) {
+    tips.push({ level: "info", text: `You usually spend about ${money(avgSpend)}/month. Create a budget on the Budget page to track what's left.` });
   }
   if (cur.uncatCount > 0) {
     tips.push({ level: "info", text: `${cur.uncatCount} transaction(s) this month are uncategorized. Categorize them (and create rules) so your budget is accurate.` });
@@ -187,7 +197,7 @@ function compute(app, userId, monthKey) {
     }
   }
   if (recurringTotal > 0) {
-    tips.push({ level: "info", text: `You have ~${money(recurringTotal)}/month in recurring charges across ${recurring.length} merchants. Review them for anything you no longer use.` });
+    tips.push({ level: "info", text: `You have about ${money(recurringTotal)}/month in bills and subscriptions across ${recurringCount} merchant(s). Review them on the Recurring page for anything you no longer use.` });
   }
   if (!txs.length) {
     tips.push({ level: "info", text: "No transactions yet. Connect a bank on the Accounts page or import a CSV." });
@@ -199,8 +209,31 @@ function compute(app, userId, monthKey) {
     spent: util.round2(spent), budgeted: util.round2(totalBudget),
     budget_left: util.round2(budgetLeft), projected_spend: util.round2(projectedSpend),
     safe_per_day: util.round2(safePerDay), uncategorized: { count: cur.uncatCount, amount: util.round2(cur.uncatSpend) },
-    split, categories, recurring, recurring_total: util.round2(recurringTotal), trend, tips,
+    split, categories, bills, recurring_total: util.round2(recurringTotal), trend, tips,
+    income_override: util.round2(incomeOverride),
+    budget_setting: util.round2(budgetSetting), category_budgeted: util.round2(catBudget),
+    everything_else: everythingElse, avg_spend: util.round2(avgSpend), bill_list: billList,
+    goals_monthly: util.round2(goalsMonthly(app, userId)),
+    daily: {
+      current: cumulative(dayCur, r.days),
+      previous: cumulative(dayPrev, util.monthRange(prevKey).days),
+      today: elapsed,
+    },
   };
+}
+
+// What to set aside each month to hit every dated goal on time.
+function goalsMonthly(app, userId) {
+  const now = new Date();
+  let total = 0;
+  for (const g of app.findRecordsByFilter("goals", "user = {:u}", "", 0, 0, { u: userId })) {
+    const left = g.getFloat("target") - g.getFloat("saved");
+    const td = g.getString("target_date");
+    if (left <= 0 || !td) continue;
+    const months = Math.max(1, (parseInt(td.slice(0, 4), 10) - now.getFullYear()) * 12 + (parseInt(td.slice(5, 7), 10) - 1 - now.getMonth()));
+    total += left / months;
+  }
+  return total;
 }
 
 module.exports = { compute };

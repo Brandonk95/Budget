@@ -72,6 +72,9 @@
     transactions: '<path d="M4 6h16M4 12h16M4 18h10"/>',
     budget: '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
     accounts: '<path d="M3 10h18M5 10v8m4-8v8m6-8v8m4-8v8M3 21h18M12 3 3 8h18z"/>',
+    spending: '<path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
+    recurring: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
+    networth: '<path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/>',
     goals: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   };
@@ -156,8 +159,11 @@
   // ------------------------------------------------------------------ shell / router
   const ROUTES = {
     dashboard: { title: "Dashboard", render: renderDashboard, month: true },
-    transactions: { title: "Transactions", render: renderTransactions, month: true },
     budget: { title: "Budget", render: renderBudget, month: true },
+    spending: { title: "Spending", render: renderSpending, month: true },
+    recurring: { title: "Recurring", render: renderRecurring, month: true },
+    transactions: { title: "Transactions", render: renderTransactions, month: true },
+    networth: { title: "Net worth", render: renderNetWorth },
     accounts: { title: "Accounts", render: renderAccounts },
     goals: { title: "Goals", render: renderGoals },
     settings: { title: "Settings", render: renderSettings },
@@ -206,99 +212,445 @@
     try { await def.render(view); } catch (err) { fail(err); view.innerHTML = `<div class="empty">Couldn't load this page: ${esc(errText(err))}</div>`; }
   }
 
-  // ------------------------------------------------------------------ dashboard
-  function barClass(pct) { return pct == null ? "" : pct > 100 ? "bad" : pct >= 85 ? "warn" : "good"; }
+  // ------------------------------------------------------------------ charts
+  // Hand-rolled SVG. Colors come from CSS tokens (--s1..--s8 categorical, --muted, --border),
+  // so light/dark both work. Every chart has a hover tooltip via [data-tip].
+  const SERIES = (i) => `var(--s${(i % 8) + 1})`;
+  const fmt0 = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const money0 = (n) => fmt0.format(Number(n) || 0);
+  const compact = (v) => { const a = Math.abs(v); const s = a >= 1e6 ? (a / 1e6).toFixed(1) + "M" : a >= 1e4 ? Math.round(a / 1e3) + "k" : a >= 1e3 ? (a / 1e3).toFixed(1) + "k" : String(Math.round(a)); return (v < 0 ? "-$" : "$") + s; };
+  const tipAttr = (html) => `data-tip="${esc(html)}"`;
+  function niceStep(range, ticks) {
+    const raw = range / ticks; const p = Math.pow(10, Math.floor(Math.log10(raw || 1))); const m = raw / p;
+    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+  }
+  function scale(lo, hi, ticks = 4) {
+    if (hi === lo) { hi = lo + 1; }
+    const st = niceStep(hi - lo, ticks);
+    const min = Math.floor(lo / st) * st, max = Math.ceil(hi / st) * st;
+    const out = []; for (let v = min; v <= max + st / 2; v += st) out.push(v);
+    return { min, max, ticks: out };
+  }
+  const dayLabel = (m, d) => { const [y, mo] = m.split("-").map(Number); return new Date(y, mo - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
 
-  function trendChart(trend) {
-    const W = 560, H = 190, P = 26, max = Math.max(1, ...trend.map((t) => Math.max(t.income, t.spend)));
-    const gw = (W - P * 2) / trend.length, bw = Math.min(22, gw / 3);
-    const y = (v) => H - 24 - (v / max) * (H - 44);
-    let bars = "";
-    trend.forEach((t, i) => {
-      const x = P + i * gw + gw / 2;
-      bars += `<rect x="${x - bw - 2}" y="${y(t.income)}" width="${bw}" height="${H - 24 - y(t.income)}" rx="3" fill="var(--good)"><title>Income ${money(t.income)}</title></rect>`;
-      bars += `<rect x="${x + 2}" y="${y(t.spend)}" width="${bw}" height="${H - 24 - y(t.spend)}" rx="3" fill="var(--primary)"><title>Spent ${money(t.spend)}</title></rect>`;
-      bars += `<text x="${x}" y="${H - 6}" text-anchor="middle">${shortMonth(t.month)}</text>`;
+  // Tooltip + crosshair, bound once for the whole app.
+  function bindTooltips() {
+    const tip = document.createElement("div");
+    tip.id = "viz-tip"; tip.className = "viz-tip"; tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+    let lastSvg = null;
+    const hide = () => { tip.style.opacity = 0; if (lastSvg) lastSvg.classList.remove("hovering"); lastSvg = null; };
+    document.addEventListener("pointermove", (e) => {
+      const t = e.target.closest && e.target.closest("[data-tip]");
+      if (!t) return hide();
+      tip.innerHTML = t.getAttribute("data-tip");
+      tip.style.opacity = 1;
+      const r = tip.getBoundingClientRect();
+      let x = e.clientX + 14, y = e.clientY + 14;
+      if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14;
+      if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+      tip.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
+      const svg = t.ownerSVGElement;
+      if (lastSvg && lastSvg !== svg) lastSvg.classList.remove("hovering");
+      lastSvg = svg;
+      if (svg && t.dataset.x) {
+        svg.classList.add("hovering");
+        const xh = svg.querySelector(".xh"); if (xh) { xh.setAttribute("x1", t.dataset.x); xh.setAttribute("x2", t.dataset.x); }
+        svg.querySelectorAll(".xh-dot").forEach((dot) => {
+          const yv = t.dataset["y" + dot.dataset.s];
+          if (yv == null || yv === "") dot.style.display = "none";
+          else { dot.style.display = ""; dot.setAttribute("cx", t.dataset.x); dot.setAttribute("cy", yv); }
+        });
+      }
     });
-    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Income and spending, last 6 months">
-      <line x1="${P}" x2="${W - P}" y1="${H - 24}" y2="${H - 24}" stroke="var(--border)"/>${bars}</svg></div>
-      <div class="legend"><span style="--c:var(--good)">Income</span><span style="--c:var(--primary)">Spending</span></div>`;
+    document.addEventListener("pointerdown", (e) => { if (!(e.target.closest && e.target.closest("[data-tip]"))) hide(); });
+    window.addEventListener("scroll", hide, { passive: true });
   }
 
-  async function renderDashboard(view) {
-    const [d, goals] = await Promise.all([
-      api("/api/budget/insights", { query: { month: state.month } }),
-      pb.collection("goals").getFullList({ sort: "target_date" }),
-      loadAccounts(),
-    ]);
-    const visibleAccounts = state.accounts.filter((a) => !a.hidden);
-    const netWorth = visibleAccounts.reduce((s, a) => s + (a.balance || 0), 0);
-    const spendCats = d.categories.filter((c) => c.kind !== "income" && (c.budget > 0 || c.spent > 0));
-    const income = d.expected_income || 1;
+  // Generic line chart: series = [{ values:[...], color, dashed, area, label }], x labels by index.
+  function lineChart({ series, n, xLabel, tipFor, height = 220, yMinZero = true, ariaLabel }) {
+    const W = 640, H = height, L = 52, R = 14, T = 12, B = 26;
+    const all = series.flatMap((s) => s.values.filter((v) => v != null));
+    const lo = yMinZero ? Math.min(0, ...all) : Math.min(...all), hi = Math.max(1, ...all);
+    const sc = scale(lo, hi);
+    const x = (i) => L + (n <= 1 ? 0 : (i / (n - 1)) * (W - L - R));
+    const y = (v) => T + (1 - (v - sc.min) / (sc.max - sc.min)) * (H - T - B);
+    let g = "";
+    for (const t of sc.ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${compact(t)}</text>`;
+    const xt = n <= 1 ? [0] : [0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round(((n - 1) * 3) / 4), n - 1];
+    for (const i of [...new Set(xt)]) g += `<text class="ax" x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}">${esc(xLabel(i))}</text>`;
+    let paths = "";
+    series.forEach((s, si) => {
+      const pts = s.values.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
+      if (!pts.length) return;
+      const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
+      if (s.area) paths += `<path d="${d}L${pts[pts.length - 1][0].toFixed(1)} ${y(Math.max(sc.min, 0))}L${pts[0][0].toFixed(1)} ${y(Math.max(sc.min, 0))}Z" fill="${s.color}" opacity=".12"/>`;
+      paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${s.dashed ? 'stroke-dasharray="5 5"' : ""}/>`;
+      if (s.endDot) { const p = pts[pts.length - 1]; paths += `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`; }
+      paths += `<circle class="xh-dot" data-s="${si}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2" cx="-10" cy="-10"/>`;
+    });
+    const cw = n <= 1 ? W - L - R : (W - L - R) / (n - 1);
+    let hits = "";
+    for (let i = 0; i < n; i++) {
+      const ys = series.map((s, si) => `data-y${si}="${s.values[i] == null ? "" : y(s.values[i]).toFixed(1)}"`).join(" ");
+      hits += `<rect class="hit" x="${x(i) - cw / 2}" y="${T}" width="${cw}" height="${H - T - B}" data-x="${x(i).toFixed(1)}" ${ys} ${tipAttr(tipFor(i))}/>`;
+    }
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(ariaLabel || "")}">${g}${paths}<line class="xh" y1="${T}" y2="${H - B}" x1="-10" x2="-10"/>${hits}</svg></div>`;
+  }
 
-    const catSection = ["needs", "wants", "savings"].map((kind) => {
-      const list = spendCats.filter((c) => c.kind === kind).sort((a, b) => (b.pct || 0) - (a.pct || 0));
-      if (!list.length) return "";
-      return `<div class="kind-h">${KINDS[kind]}</div>` + list.map((c) => {
-        const pct = c.budget > 0 ? Math.min(100, (c.spent / c.budget) * 100) : 100;
-        const proj = c.budget > 0 && d.is_current ? Math.min(100, (c.projected / c.budget) * 100) : null;
-        return `<div class="cat-row">
-          <div>${esc(c.icon)} ${esc(c.name)}</div>
-          <div class="num">${money(c.spent)} <span class="muted">/ ${c.budget > 0 ? money(c.budget) : "no budget"}</span></div>
-          <div class="bar ${c.budget > 0 ? barClass(c.pct) : "warn"}"><i style="width:${pct}%"></i>${proj != null && proj > pct ? `<b style="left:${proj}%" title="Projected ${money(c.projected)}"></b>` : ""}</div>
-        </div>`;
-      }).join("");
+  function donut(items, total, centerLabel) {
+    const R = 72, SW = 22, C = 2 * Math.PI * R, GAP = items.length > 1 ? 2 : 0;
+    let off = 0, segs = "";
+    items.forEach((it) => {
+      const len = total ? (it.value / total) * C : 0;
+      const dash = Math.max(0.5, len - GAP);
+      segs += `<circle r="${R}" cx="100" cy="100" fill="none" stroke="${it.color}" stroke-width="${SW}" stroke-dasharray="${dash} ${C - dash}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)" ${tipAttr(`<b>${esc(it.label)}</b><br>${money(it.value)} · ${total ? Math.round((it.value / total) * 100) : 0}%`)}/>`;
+      off += len;
+    });
+    if (!items.length) segs = `<circle r="${R}" cx="100" cy="100" fill="none" stroke="var(--track)" stroke-width="${SW}"/>`;
+    return `<svg class="donut" viewBox="0 0 200 200" role="img" aria-label="Spending by category">${segs}
+      <text x="100" y="98" text-anchor="middle" class="d-big">${esc(money0(total))}</text>
+      <text x="100" y="118" text-anchor="middle" class="d-sub">${esc(centerLabel)}</text></svg>`;
+  }
+
+  function monthBars(trend, avg, currentKey) {
+    const W = 640, H = 200, L = 52, R = 14, T = 18, B = 26;
+    const sc = scale(0, Math.max(1, avg, ...trend.map((t) => t.total)));
+    const y = (v) => T + (1 - v / sc.max) * (H - T - B);
+    const gw = (W - L - R) / trend.length, bw = Math.min(56, gw * 0.55);
+    let g = "";
+    for (const t of sc.ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${compact(t)}</text>`;
+    let bars = "";
+    trend.forEach((t, i) => {
+      const x0 = L + i * gw + (gw - bw) / 2, top = y(t.total), base = y(0), r = Math.min(4, (base - top) / 2);
+      if (t.total > 0) bars += `<path d="M${x0} ${base}V${top + r}Q${x0} ${top} ${x0 + r} ${top}H${x0 + bw - r}Q${x0 + bw} ${top} ${x0 + bw} ${top + r}V${base}Z" fill="var(--s1)" opacity="${t.month === currentKey ? 1 : 0.55}"/>`;
+      bars += `<rect class="hit" x="${L + i * gw}" y="${T}" width="${gw}" height="${H - T - B}" ${tipAttr(`<b>${esc(monthLabel(t.month))}</b><br>Spent ${money(t.total)}`)}/>`;
+      if (t.month === currentKey && t.total > 0) bars += `<text class="lbl" x="${x0 + bw / 2}" y="${top - 6}" text-anchor="middle">${esc(compact(t.total))}</text>`;
+      bars += `<text class="ax" x="${x0 + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(shortMonth(t.month))}</text>`;
+    });
+    const avgLine = avg > 0 ? `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--muted)" stroke-dasharray="4 4"/><text class="ax" x="${W - R}" y="${y(avg) - 5}" text-anchor="end">avg ${esc(compact(avg))}</text>` : "";
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending by month">${g}${bars}${avgLine}</svg></div>`;
+  }
+
+  // ------------------------------------------------------------------ shared bits
+  const avatar = (name, icon) => `<span class="av" aria-hidden="true">${icon ? esc(icon) : esc((String(name || "?").trim().charAt(0) || "?").toUpperCase())}</span>`;
+  const FREQ = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" };
+  const RKIND = { subscription: "Subscriptions", bill: "Bills & utilities", income: "Income" };
+  const GROUPS = [["checking", "Checking"], ["credit", "Credit cards"], ["savings", "Savings"], ["investment", "Investments"], ["loan", "Loans"], ["cash", "Cash"], ["other", "Other"]];
+  const dueText = (n) => (n < 0 ? `${-n} day${n === -1 ? "" : "s"} late` : n === 0 ? "Today" : n === 1 ? "Tomorrow" : `In ${n} days`);
+  function barClass(pct) { return pct == null ? "" : pct > 100 ? "bad" : pct >= 85 ? "warn" : "good"; }
+
+  function txLine(t) {
+    const c = catById(t.category);
+    const acc = accById(t.account);
+    return `<div class="tx-line click" data-id="${t.id}">
+      ${avatar(t.payee || t.description, c && c.icon)}
+      <div class="grow"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
+        <div class="small muted">${esc(c ? c.name : "Uncategorized")}${acc ? " · " + esc(acc.name) : ""}</div></div>
+      <div class="right"><div class="num ${t.amount > 0 ? "pos" : ""}">${t.amount > 0 ? "+" : ""}${money(t.amount)}</div><div class="small muted">${prettyDate(t.date)}</div></div>
+    </div>`;
+  }
+
+  // ------------------------------------------------------------------ dashboard
+  async function renderDashboard(view) {
+    const b = monthBounds(state.month);
+    const [d, rec, nw, recent, goals] = await Promise.all([
+      api("/api/budget/insights", { query: { month: state.month } }),
+      api("/api/budget/recurring", { query: { month: state.month } }),
+      api("/api/budget/networth", { query: { days: 30 } }),
+      pb.collection("transactions").getList(1, 7, { sort: "-date,-created", filter: pb.filter("date < {:e}", { e: b.end }) }),
+      pb.collection("goals").getFullList({ sort: "target_date" }),
+      loadCategories(), loadAccounts(),
+    ]);
+    const today = d.daily.today;
+    const cur = d.daily.current, prev = d.daily.previous;
+    const curNow = today ? cur[today - 1] : 0;
+    const prevSame = today ? prev[Math.min(today, prev.length) - 1] || 0 : 0;
+    const diff = curNow - prevSame;
+    const prevTotal = prev[prev.length - 1] || 0;
+    const compare = !prevTotal && !curNow ? "No spending yet."
+      : d.is_current ? (Math.abs(diff) < 1 ? "About the same as last month at this point" : diff < 0 ? `<b class="pos">${money(-diff)} less</b> than last month at this point` : `<b>${money(diff)} more</b> than last month at this point`)
+        : `Last month: ${money(prevTotal)}`;
+    const n = Math.max(cur.length, prev.length);
+    const prevKey = shiftMonth(state.month, -1);
+    const chart = lineChart({
+      n, ariaLabel: "Cumulative spending this month vs last month",
+      series: [
+        { values: prev.concat(Array(n - prev.length).fill(null)), color: "var(--muted)", dashed: true },
+        { values: cur.map((v, i) => (i < today ? v : null)), color: "var(--s1)", area: true, endDot: true },
+      ],
+      xLabel: (i) => dayLabel(state.month, i + 1),
+      tipFor: (i) => `<b>${esc(dayLabel(state.month, i + 1))}</b><br>This month: ${i < today ? money(cur[i]) : "—"}<br><span class="muted">${esc(dayLabel(prevKey, Math.min(i + 1, prev.length)))}: ${prev[i] != null ? money(prev[i]) : "—"}</span>`,
+    });
+
+    const left = d.budget_left;
+    const usedPct = d.budgeted > 0 ? Math.min(100, (d.spent / d.budgeted) * 100) : 0;
+    const bills = rec.upcoming.filter((u) => u.kind !== "income" && u.days_until <= 14);
+    const billsTotal = bills.reduce((s, u) => s + u.amount, 0);
+    const spendCats = d.categories.filter((c) => c.kind !== "income" && c.spent > 0).sort((a, b) => b.spent - a.spent).slice(0, 5);
+    const topMax = Math.max(1, ...spendCats.map((c) => Math.max(c.spent, c.budget)));
+
+    const groups = GROUPS.filter(([k]) => nw.groups[k]).map(([k, label]) => {
+      const g = nw.groups[k];
+      return `<details class="acct-g"><summary><span>${label}</span><span class="num ${g.total < 0 ? "" : ""}">${money(g.total)}</span></summary>
+        ${g.accounts.map((a) => `<div class="acct-row"><span>${esc(a.name)}${a.institution ? ` <span class="muted small">${esc(a.institution)}</span>` : ""}</span><span class="num">${money(a.value)}</span></div>`).join("")}</details>`;
     }).join("");
 
-    const sp = d.split;
     view.innerHTML = `
       <div class="stack">
-        <div class="grid kpis">
-          <div class="card kpi"><div class="label">Income</div><div class="value num pos">${money(d.income)}</div><div class="sub">Typical: ${money(d.expected_income)}</div></div>
-          <div class="card kpi"><div class="label">Spent</div><div class="value num">${money(d.spent)}</div><div class="sub">${d.is_current ? "Projected " + money(d.projected_spend) : "of " + money(d.budgeted) + " budgeted"}</div></div>
-          <div class="card kpi"><div class="label">Left in budget</div><div class="value num ${d.budget_left < 0 ? "" : "pos"}" style="${d.budget_left < 0 ? "color:var(--bad)" : ""}">${money(d.budget_left)}</div><div class="sub">${money(d.budgeted)} budgeted</div></div>
-          ${d.is_current ? `<div class="card kpi"><div class="label">Safe to spend</div><div class="value num">${money(d.safe_per_day)}<span class="muted" style="font-size:14px">/day</span></div><div class="sub">${d.remaining_days} days left</div></div>` : ""}
-          <div class="card kpi"><div class="label">Net worth</div><div class="value num">${money(netWorth)}</div><div class="sub">${visibleAccounts.length} account${visibleAccounts.length === 1 ? "" : "s"}</div></div>
-        </div>
-
-        <div class="grid two">
-          <div class="card">
-            <div class="card-h"><h2>Spending by category</h2><div class="spacer"></div><a href="#/budget" class="small">Edit budget →</a></div>
-            ${catSection || `<div class="empty">No spending yet this month.</div>`}
-            ${d.uncategorized.count ? `<div class="cat-row"><div>❔ <a href="#/transactions?uncat=1">Uncategorized (${d.uncategorized.count})</a></div><div class="num">${money(d.uncategorized.amount)}</div></div>` : ""}
+        <div class="grid dash-top">
+          <div class="card hero">
+            <div class="card-h"><div><div class="label">Spent ${d.is_current ? "this month" : "in " + esc(monthLabel(state.month))}</div>
+              <div class="big num">${money(d.spent)}</div><div class="small muted">${compare}</div></div>
+              <div class="spacer"></div>
+              <div class="legend"><span style="--c:var(--s1)">This month</span><span class="dash" style="--c:var(--muted)">Last month</span></div></div>
+            ${chart}
           </div>
           <div class="stack">
             <div class="card">
-              <div class="card-h"><h2>Insights</h2></div>
-              ${d.tips.length ? `<ul class="tips">${d.tips.map((t) => `<li class="${t.level}">${esc(t.text)}</li>`).join("")}</ul>` : `<div class="muted">You're on track. Nice work.</div>`}
+              <div class="card-h"><h2>Left to spend</h2><div class="spacer"></div><a href="#/budget" class="small">Budget →</a></div>
+              ${d.budgeted > 0 ? `
+                <div class="big num" style="color:${left < 0 ? "var(--bad)" : "var(--text)"}">${money(left)}</div>
+                <div class="bar ${barClass(Math.round((d.spent / d.budgeted) * 100))}" style="margin:10px 0 6px"><i style="width:${usedPct}%"></i></div>
+                <div class="row small muted"><span>${money(d.spent)} of ${money(d.budgeted)}</span><div class="spacer"></div>${d.is_current && d.remaining_days ? `<span>${money(d.safe_per_day)}/day · ${d.remaining_days} days left</span>` : ""}</div>`
+              : `<p class="muted" style="margin:0 0 10px">Set a monthly budget to see what's left to spend.</p><a class="btn primary sm" href="#/budget">Create a budget</a>`}
             </div>
             <div class="card">
-              <div class="card-h"><h2>50 / 30 / 20 check</h2></div>
-              <div class="split">
-                <i style="width:${Math.min(100, (sp.needs / income) * 100)}%;background:var(--needs)"></i>
-                <i style="width:${Math.min(100, (sp.wants / income) * 100)}%;background:var(--wants)"></i>
-                <i style="width:${Math.max(0, Math.min(100, (sp.savings / income) * 100))}%;background:var(--savings)"></i>
-              </div>
-              <div class="legend">
-                <span style="--c:var(--needs)">Needs ${sp.needs_pct}% <em class="muted">(≤50%)</em></span>
-                <span style="--c:var(--wants)">Wants ${sp.wants_pct}% <em class="muted">(≤30%)</em></span>
-                <span style="--c:var(--savings)">Left / saved ${sp.savings_pct}% <em class="muted">(≥20%)</em></span>
-              </div>
+              <div class="card-h"><h2>Upcoming</h2><div class="spacer"></div><span class="small muted">next 14 days · ${money(billsTotal)}</span></div>
+              ${bills.length ? bills.slice(0, 5).map((u) => `<a class="bill-line" href="#/recurring">${avatar(u.name)}<div class="grow"><div class="t-name">${esc(u.name)}</div><div class="small muted">${dueText(u.days_until)} · ${prettyDate(u.date)}</div></div><div class="num">${money(u.amount)}</div></a>`).join("")
+                : `<div class="muted small">No bills due in the next two weeks.${rec.items.length ? "" : ` Recurring charges are detected from your history; <a href="#/recurring">add one</a>.`}</div>`}
             </div>
           </div>
         </div>
 
         <div class="grid two">
-          <div class="card"><div class="card-h"><h2>Last 6 months</h2></div>${trendChart(d.trend)}</div>
           <div class="card">
-            <div class="card-h"><h2>Recurring charges</h2><div class="spacer"></div><span class="num muted">${money(d.recurring_total)}/mo</span></div>
-            ${d.recurring.length ? `<table><tbody>${d.recurring.slice(0, 8).map((r) => `<tr><td class="desc">${esc(r.name)}<div class="small muted">${r.months} months · last ${prettyDate(r.last_date)}</div></td><td class="right num">${money(r.amount)}</td></tr>`).join("")}</tbody></table>` : `<div class="muted">Recurring charges show up after ~3 months of history.</div>`}
+            <div class="card-h"><h2>Recent transactions</h2><div class="spacer"></div><a href="#/transactions" class="small">See all →</a></div>
+            ${recent.items.length ? recent.items.map(txLine).join("") : `<div class="empty">No transactions yet. <a href="#/accounts">Connect a bank</a> or import a CSV.</div>`}
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="card-h"><h2>Net worth</h2><div class="spacer"></div><a href="#/networth" class="small">Details →</a></div>
+              <div class="big num">${money(nw.net)}</div>
+              <div class="small muted">${nw.change === 0 ? "No change" : `<b class="${nw.change > 0 ? "pos" : ""}">${nw.change > 0 ? "+" : ""}${money(nw.change)}</b>`} over the last 30 days</div>
+              <div class="accts">${groups || `<div class="muted small" style="margin-top:10px">No accounts yet.</div>`}</div>
+            </div>
+            <div class="card">
+              <div class="card-h"><h2>Top categories</h2><div class="spacer"></div><a href="#/spending" class="small">Spending →</a></div>
+              ${spendCats.length ? spendCats.map((c) => `<div class="cat-row"><div>${esc(c.icon)} ${esc(c.name)}</div><div class="num">${money(c.spent)}${c.budget ? ` <span class="muted">/ ${money0(c.budget)}</span>` : ""}</div>
+                <div class="bar ${c.budget ? barClass(c.pct) : ""}"><i style="width:${(c.spent / topMax) * 100}%"></i></div></div>`).join("") : `<div class="muted small">No spending yet this month.</div>`}
+              ${d.uncategorized.count ? `<div class="small" style="margin-top:8px"><a href="#/transactions?uncat=1">${d.uncategorized.count} uncategorized (${money(d.uncategorized.amount)})</a></div>` : ""}
+            </div>
           </div>
         </div>
 
+        ${d.tips.length ? `<div class="card"><div class="card-h"><h2>Insights</h2></div><ul class="tips">${d.tips.map((t) => `<li class="${t.level}">${esc(t.text)}</li>`).join("")}</ul></div>` : ""}
         ${goals.length ? `<div class="card"><div class="card-h"><h2>Goals</h2><div class="spacer"></div><a href="#/goals" class="small">All goals →</a></div>
           <div class="grid goals-grid">${goals.map(goalCard).join("")}</div></div>` : ""}
       </div>`;
+    const byId = Object.fromEntries(recent.items.map((t) => [t.id, t]));
+    $$(".tx-line", view).forEach((el) => (el.onclick = () => editTx(byId[el.dataset.id])));
+  }
+
+  // ------------------------------------------------------------------ spending
+  async function renderSpending(view) {
+    const [s] = await Promise.all([api("/api/budget/spending", { query: { month: state.month } }), loadCategories()]);
+    const top = s.categories.slice(0, 7);
+    const rest = s.categories.slice(7);
+    const items = top.map((c, i) => ({ label: `${c.icon || ""} ${c.name}`.trim(), value: c.total, color: SERIES(i), id: c.id }));
+    if (rest.length) items.push({ label: `Other (${rest.length})`, value: rest.reduce((a, c) => a + c.total, 0), color: "var(--muted)", id: null });
+    const vsAvg = s.average ? s.total - s.average : 0;
+    const merchMax = Math.max(1, ...s.merchants.map((m) => m.total));
+
+    view.innerHTML = `
+      <div class="stack">
+        <div class="grid kpis">
+          <div class="card kpi"><div class="label">Spent</div><div class="value num">${money(s.total)}</div><div class="sub">${s.transactions} purchase(s)</div></div>
+          <div class="card kpi"><div class="label">vs 5-month average</div><div class="value num">${s.average ? money(Math.abs(vsAvg)) + `<span class="muted" style="font-size:14px"> ${vsAvg > 0 ? "over" : "under"}</span>` : "—"}</div><div class="sub">Average ${money(s.average)}</div></div>
+          <div class="card kpi"><div class="label">Income</div><div class="value num pos">${money(s.income)}</div><div class="sub">${s.income ? `Spent ${Math.round((s.total / s.income) * 100)}% of income` : "No income this month"}</div></div>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-h"><h2>By category</h2></div>
+            ${s.categories.length ? `<div class="donut-wrap">${donut(items, s.total, "spent")}
+              <div class="d-legend">${items.map((it) => `<button class="d-item" ${it.id != null ? `data-cat="${it.id}"` : "disabled"}><i style="background:${it.color}"></i><span class="grow">${esc(it.label)}</span><span class="num">${money(it.value)}</span><span class="num muted small">${s.total ? Math.round((it.value / s.total) * 100) : 0}%</span></button>`).join("")}</div></div>`
+              : `<div class="empty">No spending in ${esc(monthLabel(state.month))}.</div>`}
+          </div>
+          <div class="card">
+            <div class="card-h"><h2>Top merchants</h2></div>
+            ${s.merchants.length ? s.merchants.slice(0, 10).map((m) => `<div class="cat-row"><div class="desc">${esc(m.name)} <span class="muted small">×${m.count}</span></div><div class="num">${money(m.total)}</div><div class="bar"><i style="width:${(m.total / merchMax) * 100}%"></i></div></div>`).join("") : `<div class="muted small">Nothing yet.</div>`}
+          </div>
+        </div>
+        <div class="card"><div class="card-h"><h2>Last 6 months</h2></div>${monthBars(s.trend, s.average, state.month)}</div>
+      </div>`;
+    $$(".d-item[data-cat]", view).forEach((b) => (b.onclick = () => { txState.category = b.dataset.cat || "__none"; txState.page = 1; location.hash = "#/transactions"; }));
+  }
+
+  // ------------------------------------------------------------------ recurring
+  const recState = { tab: "upcoming" };
+
+  function billCalendar(month, calendar, today) {
+    const [y, m] = month.split("-").map(Number);
+    const first = new Date(y, m - 1, 1).getDay();
+    const days = new Date(y, m, 0).getDate();
+    const byDay = {};
+    for (const c of calendar) (byDay[+c.date.slice(8, 10)] = byDay[+c.date.slice(8, 10)] || []).push(c);
+    let cells = "";
+    for (let i = 0; i < first; i++) cells += `<div class="cal-c empty-c"></div>`;
+    for (let d = 1; d <= days; d++) {
+      const list = byDay[d] || [];
+      const key = `${month}-${pad(d)}`;
+      const tip = list.length ? `<b>${esc(dayLabel(month, d))}</b>` + list.map((c) => `<br>${c.paid ? "✓ " : ""}${esc(c.name)}: ${c.kind === "income" ? "+" : ""}${money(c.amount)}`).join("") : "";
+      cells += `<div class="cal-c ${key === today ? "today" : ""} ${list.length ? "has" : ""}" ${tip ? tipAttr(tip) : ""}>
+        <div class="cal-d">${d}</div>
+        ${list.slice(0, 2).map((c) => `<div class="chip ${c.kind === "income" ? "inc" : ""} ${c.paid ? "paid" : ""}">${c.paid ? "✓ " : ""}${esc(c.name)}</div>`).join("")}
+        ${list.length > 2 ? `<div class="small muted">+${list.length - 2} more</div>` : ""}
+        ${list.length ? `<div class="cal-dots">${list.map((c) => `<i class="${c.kind === "income" ? "inc" : ""}"></i>`).join("")}</div>` : ""}
+      </div>`;
+    }
+    const wd = Array.from({ length: 7 }, (_, i) => new Date(2023, 0, 1 + i).toLocaleDateString(undefined, { weekday: "short" }));
+    return `<div class="cal">${wd.map((w) => `<div class="cal-h">${esc(w)}</div>`).join("")}${cells}</div>`;
+  }
+
+  function recRow(it) {
+    const c = catById(it.category);
+    const sub = it.status === "active"
+      ? `${FREQ[it.frequency]}${it.next_due ? ` · next ${prettyDate(it.next_due)} (${dueText(it.days_until).toLowerCase()})` : ""}`
+      : `${it.status === "cancelled" ? "Cancelled" : "Not recurring"}${it.last_date ? ` · last ${prettyDate(it.last_date)}` : ""}`;
+    return `<div class="tx-line click rec" data-id="${it.id}">${avatar(it.name, c && c.icon)}
+      <div class="grow"><div class="t-name">${esc(it.name)}${it.source === "auto" && !it.edited ? ' <span class="pill">detected</span>' : ""}</div><div class="small muted">${sub}</div></div>
+      <div class="right"><div class="num ${it.kind === "income" ? "pos" : ""}">${it.kind === "income" ? "+" : ""}${money(it.amount)}</div>${it.frequency !== "monthly" ? `<div class="small muted">${money(it.monthly)}/mo</div>` : ""}</div></div>`;
+  }
+
+  async function renderRecurring(view) {
+    const [r] = await Promise.all([api("/api/budget/recurring", { query: { month: state.month } }), loadCategories(), loadAccounts()]);
+    const active = r.items.filter((x) => x.status === "active");
+    const inactive = r.items.filter((x) => x.status !== "active");
+    const t = r.totals;
+    const tab = recState.tab;
+    const section = (kind) => {
+      const list = active.filter((x) => x.kind === kind).sort((a, b) => b.monthly - a.monthly);
+      if (!list.length) return "";
+      const sum = list.reduce((s, x) => s + x.monthly, 0);
+      return `<div class="kind-h row"><span>${RKIND[kind]}</span><div class="spacer"></div><span class="num">${money(sum)}/mo</span></div>${list.map(recRow).join("")}`;
+    };
+    const upcoming = r.upcoming.slice(0, 12);
+    view.innerHTML = `
+      <div class="stack">
+        <div class="grid kpis">
+          <div class="card kpi"><div class="label">Bills &amp; subscriptions</div><div class="value num">${money(t.expenses)}<span class="muted" style="font-size:14px">/mo</span></div><div class="sub">${active.filter((x) => x.kind !== "income").length} active</div></div>
+          <div class="card kpi"><div class="label">Subscriptions</div><div class="value num">${money(t.subscriptions)}<span class="muted" style="font-size:14px">/mo</span></div><div class="sub">${money(t.subscriptions * 12)} a year</div></div>
+          <div class="card kpi"><div class="label">Still due ${state.month === thisMonth() ? "this month" : ""}</div><div class="value num">${money(t.remaining_this_month)}</div><div class="sub">${money(t.paid_this_month)} paid so far</div></div>
+          <div class="card kpi"><div class="label">Recurring income</div><div class="value num pos">${money(t.income)}<span class="muted" style="font-size:14px">/mo</span></div><div class="sub">Paychecks &amp; deposits</div></div>
+        </div>
+        <div class="card">
+          <div class="row" style="margin-bottom:14px">
+            <div class="seg" role="tablist">
+              ${[["upcoming", "Upcoming"], ["all", "All recurring"], ["inactive", `Cancelled &amp; ignored${inactive.length ? ` (${inactive.length})` : ""}`]].map(([k, l]) => `<button role="tab" data-tab="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}
+            </div>
+            <div class="spacer"></div>
+            <button class="btn" id="rec-scan" title="Look through your transactions for repeating charges">↻ Rescan</button>
+            <button class="btn primary" id="rec-add">+ Add</button>
+          </div>
+          ${tab === "upcoming" ? `<div class="grid rec-up">
+              <div>${billCalendar(state.month, r.calendar, r.today)}<div class="legend"><span style="--c:var(--s1)">Bill or subscription</span><span style="--c:var(--good)">Income</span><span>✓ paid</span></div></div>
+              <div><div class="kind-h">Next 30 days</div>${upcoming.length ? upcoming.map((u) => { const it = r.items.find((x) => x.id === u.id); return `<div class="tx-line click rec" data-id="${u.id}">${avatar(u.name, it && catById(it.category) && catById(it.category).icon)}<div class="grow"><div class="t-name">${esc(u.name)}</div><div class="small muted">${dueText(u.days_until)} · ${prettyDate(u.date)}</div></div><div class="num ${u.kind === "income" ? "pos" : ""}">${u.kind === "income" ? "+" : ""}${money(u.amount)}</div></div>`; }).join("") : `<div class="muted small">Nothing due in the next 30 days.</div>`}</div>
+            </div>`
+            : tab === "all" ? (active.length ? ["subscription", "bill", "income"].map(section).join("") : `<div class="empty">No recurring items yet. Keel finds them after about three months of history, or add your own.</div>`)
+            : (inactive.length ? inactive.map(recRow).join("") : `<div class="empty">Nothing here. Items you cancel or mark as not recurring show up here.</div>`)}
+        </div>
+      </div>`;
+    $$(".seg button", view).forEach((b) => (b.onclick = () => { recState.tab = b.dataset.tab; route(); }));
+    const byId = Object.fromEntries(r.items.map((x) => [x.id, x]));
+    $$(".rec", view).forEach((el) => (el.onclick = () => editRecurring(byId[el.dataset.id])));
+    $("#rec-add").onclick = () => editRecurring(null);
+    $("#rec-scan").onclick = async (e) => {
+      e.target.disabled = true;
+      try { const x = await api("/api/budget/recurring/detect", { method: "POST" }); toast(x.found ? `Found ${x.found} new recurring item(s)` : "No new recurring items found"); route(); } catch (err) { fail(err); e.target.disabled = false; }
+    };
+  }
+
+  function editRecurring(it) {
+    const isNew = !it;
+    it = it || { name: "", amount: "", kind: "bill", frequency: "monthly", next_date: ymd(new Date()), category: "", status: "active", source: "manual" };
+    const sel = (name, map, v) => `<select name="${name}">${Object.keys(map).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${map[k]}</option>`).join("")}</select>`;
+    modal(isNew ? "Add recurring" : it.name, `
+      <form id="rec-form" class="stack">
+        ${!isNew && it.last_date ? `<div class="callout small">Last ${it.kind === "income" ? "deposit" : "charge"}: <b>${money(it.last_amount || it.amount)}</b> on ${prettyDate(it.last_date)} ${dateOnly(it.last_date).slice(0, 4)}${it.source === "auto" ? " · detected from your transactions" : ""}</div>` : ""}
+        <label class="field"><span>Name</span><input name="name" required value="${esc(it.name)}" placeholder="e.g. Netflix, Rent, Electric"></label>
+        <div class="form-grid">
+          <label class="field"><span>Amount</span><input name="amount" type="number" min="0" step="0.01" required value="${it.amount}"></label>
+          <label class="field"><span>Type</span>${sel("kind", { subscription: "Subscription", bill: "Bill", income: "Income" }, it.kind)}</label>
+        </div>
+        <div class="form-grid">
+          <label class="field"><span>How often</span>${sel("frequency", FREQ, it.frequency)}</label>
+          <label class="field"><span>Next due</span><input name="next_date" type="date" value="${dateOnly(it.next_due || it.next_date)}"></label>
+        </div>
+        <label class="field"><span>Category</span><select name="category">${categoryOptions(it.category, { noneLabel: "None" })}</select></label>
+        <div class="actions">
+          ${!isNew ? (it.status === "active"
+            ? `<button type="button" class="btn" id="r-cancel" title="You stopped this; keep it for reference">Mark cancelled</button><button type="button" class="btn" id="r-ignore" title="This isn't actually recurring">Not recurring</button>`
+            : `<button type="button" class="btn" id="r-active">Track again</button>`) + (it.source === "manual" ? `<button type="button" class="btn danger" id="r-del">Delete</button>` : "") + `<div class="spacer"></div>` : ""}
+          <button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button>
+        </div>
+      </form>`, {
+      onMount: (m, close) => {
+        const form = $("#rec-form", m);
+        const save = async (extra) => {
+          const fd = Object.fromEntries(new FormData(form));
+          const data = { name: fd.name.trim(), amount: Math.abs(Number(fd.amount) || 0), kind: fd.kind, frequency: fd.frequency, category: fd.category, next_date: fd.next_date ? fd.next_date + " 12:00:00.000Z" : "", ...extra };
+          try {
+            if (isNew) await pb.collection("recurring").create({ ...data, user: pb.authStore.record.id, status: "active" });
+            else await pb.collection("recurring").update(it.id, data);
+            close(); route();
+          } catch (err) { fail(err); }
+        };
+        form.onsubmit = (e) => { e.preventDefault(); save({}); };
+        const on = (id, fn) => { const b = $(id, m); if (b) b.onclick = fn; };
+        on("#r-cancel", () => save({ status: "cancelled" }));
+        on("#r-ignore", () => save({ status: "ignored" }));
+        on("#r-active", () => save({ status: "active" }));
+        on("#r-del", async () => { close(); if (await confirmBox(`Delete “${it.name}”?`)) { try { await pb.collection("recurring").delete(it.id); route(); } catch (err) { fail(err); } } });
+      },
+    });
+  }
+
+  // ------------------------------------------------------------------ net worth
+  const nwState = { days: 90 };
+  async function renderNetWorth(view) {
+    const nw = await api("/api/budget/networth", { query: { days: nwState.days } });
+    const pts = nw.points;
+    const est = pts.some((p) => p.estimated);
+    const chart = pts.length > 1 ? lineChart({
+      n: pts.length, yMinZero: false, height: 240, ariaLabel: "Net worth over time",
+      series: [{ values: pts.map((p) => p.net), color: "var(--s1)", area: false, endDot: true }],
+      xLabel: (i) => prettyDate(pts[i].day),
+      tipFor: (i) => `<b>${esc(prettyDate(pts[i].day))}</b><br>${money(pts[i].net)}${pts[i].estimated ? '<br><span class="muted">estimated</span>' : ""}`,
+    }) : `<div class="empty">Not enough history yet.</div>`;
+    const assetG = [], liabG = [];
+    for (const [k, label] of GROUPS) {
+      const g = nw.groups[k]; if (!g) continue;
+      (k === "credit" || k === "loan" ? liabG : assetG).push({ label, g });
+    }
+    const list = (arr) => arr.length ? arr.map(({ label, g }) => `<div class="kind-h row"><span>${label}</span><div class="spacer"></div><span class="num">${money(Math.abs(g.total))}</span></div>
+      ${g.accounts.map((a) => `<div class="acct-row"><span>${esc(a.name)}${a.institution ? ` <span class="muted small">${esc(a.institution)}</span>` : ""}</span><span class="num">${money(Math.abs(a.value))}</span></div>`).join("")}`).join("") : `<div class="muted small">None.</div>`;
+    view.innerHTML = `
+      <div class="stack">
+        <div class="card hero">
+          <div class="card-h"><div><div class="label">Net worth</div><div class="big num">${money(nw.net)}</div>
+            <div class="small muted">${nw.change === 0 ? "No change" : `<b class="${nw.change > 0 ? "pos" : ""}">${nw.change > 0 ? "+" : ""}${money(nw.change)}</b>`} over the last ${nwState.days} days</div></div>
+            <div class="spacer"></div>
+            <div class="seg">${[[30, "1M"], [90, "3M"], [180, "6M"], [365, "1Y"]].map(([dd, l]) => `<button data-days="${dd}" class="${nwState.days === dd ? "on" : ""}">${l}</button>`).join("")}</div></div>
+          ${chart}
+          ${est ? `<p class="small muted" style="margin:6px 0 0">Earlier points are estimated from your transactions; Keel records your balances daily from now on.</p>` : ""}
+        </div>
+        <div class="grid halves">
+          <div class="card"><div class="card-h"><h2>Assets</h2><div class="spacer"></div><span class="num pos">${money(nw.assets)}</span></div>${list(assetG)}</div>
+          <div class="card"><div class="card-h"><h2>Liabilities</h2><div class="spacer"></div><span class="num">${money(nw.liabilities)}</span></div>${list(liabG)}</div>
+        </div>
+        <p class="small muted">Hide an account from net worth on the <a href="#/accounts">Accounts</a> page. Credit cards and loans count as debts.</p>
+      </div>`;
+    $$(".seg button", view).forEach((b) => (b.onclick = () => { nwState.days = +b.dataset.days; route(); }));
   }
 
   // ------------------------------------------------------------------ transactions
@@ -345,20 +697,16 @@
       return;
     }
     const total = res.items.reduce((s, t) => s + t.amount, 0);
+    const days = [];
+    for (const t of res.items) {
+      const d = dateOnly(t.date);
+      if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] });
+      days[days.length - 1].items.push(t);
+    }
+    const dayHead = (d) => { const [y, m, dd] = d.split("-").map(Number); return new Date(y, m - 1, dd).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }); };
     box.innerHTML = `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Date</th><th>Description</th><th class="hide-sm">Account</th><th>Category</th><th class="right">Amount</th></tr></thead>
-        <tbody>${res.items.map((t) => {
-          const acc = accById(t.account);
-          return `<tr class="click" data-id="${t.id}">
-            <td class="num">${prettyDate(t.date)}</td>
-            <td class="desc" title="${esc(t.description)}">${esc(t.payee || t.description)}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.notes ? `<div class="small muted desc">${esc(t.notes)}</div>` : ""}</td>
-            <td class="hide-sm muted small">${esc(acc ? acc.name : "")}</td>
-            <td><select class="inline cat-sel" data-id="${t.id}">${categoryOptions(t.category)}</select></td>
-            <td class="right num ${t.amount > 0 ? "pos" : ""}">${money(t.amount)}</td>
-          </tr>`;
-        }).join("")}</tbody>
-      </table></div>
+      ${days.map((g) => `<div class="day-h row"><span>${esc(dayHead(g.d))}</span><div class="spacer"></div><span class="num small">${money(g.items.reduce((s, t) => s + t.amount, 0))}</span></div>
+        ${g.items.map(txLine).join("")}`).join("")}
       <div class="row" style="margin-top:12px">
         <span class="muted small">${res.totalItems} transaction(s) · net ${money(total)} on this page</span>
         <div class="spacer"></div>
@@ -366,18 +714,7 @@
         ${res.page < res.totalPages ? `<button class="btn sm" id="pnext">Next ›</button>` : ""}
       </div>`;
     const items = Object.fromEntries(res.items.map((t) => [t.id, t]));
-    $$(".cat-sel", box).forEach((s) => {
-      s.onclick = (e) => e.stopPropagation();
-      s.onchange = async () => {
-        const tx = items[s.dataset.id];
-        try {
-          await pb.collection("transactions").update(tx.id, { category: s.value });
-          tx.category = s.value;
-          if (s.value) offerRule(tx, s.value);
-        } catch (err) { fail(err); }
-      };
-    });
-    $$("tr.click", box).forEach((tr) => (tr.onclick = () => editTx(items[tr.dataset.id])));
+    $$(".tx-line", box).forEach((el) => (el.onclick = () => editTx(items[el.dataset.id])));
     const pp = $("#pprev"); if (pp) pp.onclick = () => { txState.page--; loadTx(); };
     const pn = $("#pnext"); if (pn) pn.onclick = () => { txState.page++; loadTx(); };
   }
@@ -438,6 +775,7 @@
         <label class="field"><span>Payee</span><input name="payee" value="${esc(tx.payee)}"></label>
         <label class="field"><span>Category</span><select name="category">${categoryOptions(tx.category)}</select></label>
         <label class="field"><span>Notes</span><textarea name="notes" rows="2">${esc(tx.notes)}</textarea></label>
+        <label class="check"><input type="checkbox" name="exclude" ${tx.exclude ? "checked" : ""}> Exclude from budget and spending (reimbursements, one-off moves)</label>
         <div class="actions">
           ${!isNew ? `<button type="button" class="btn danger" id="del">Delete</button><button type="button" class="btn" id="mkrule">Make rule</button><div class="spacer"></div>` : ""}
           <button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button>
@@ -448,12 +786,14 @@
         form.onsubmit = async (e) => {
           e.preventDefault();
           const fd = Object.fromEntries(new FormData(form));
-          const data = { payee: fd.payee, category: fd.category, notes: fd.notes };
+          const data = { payee: fd.payee, category: fd.category, notes: fd.notes, exclude: !!fd.exclude };
           if (manual) Object.assign(data, { date: fd.date + " 12:00:00.000Z", amount: Number(fd.amount), description: fd.description });
           try {
             if (isNew) await pb.collection("transactions").create({ ...data, user: pb.authStore.record.id, account: fd.account });
             else await pb.collection("transactions").update(tx.id, data);
-            close(); toast("Saved"); loadTx();
+            close(); toast("Saved");
+            if (!isNew && fd.category && fd.category !== tx.category) offerRule(tx, fd.category);
+            if (currentRoute() === "transactions") loadTx(); else route();
           } catch (err) { fail(err); }
         };
         const del = $("#del", m);
@@ -469,71 +809,250 @@
   }
 
   // ------------------------------------------------------------------ budget
+  // Rocket Money-style: one monthly spending budget. Categories you care about get their
+  // own slice; everything without a slice shares "Everything else".
+  function ring(pct, cls, big, sub) {
+    const R = 64, C = 2 * Math.PI * R, p = Math.max(0, Math.min(100, pct));
+    return `<svg class="ring ${cls}" viewBox="0 0 160 160" role="img" aria-label="${esc(sub)}">
+      <circle r="${R}" cx="80" cy="80" fill="none" stroke="var(--track)" stroke-width="14"/>
+      <circle r="${R}" cx="80" cy="80" fill="none" stroke="currentColor" stroke-width="14" stroke-linecap="round"
+        stroke-dasharray="${(p / 100) * C} ${C}" transform="rotate(-90 80 80)"/>
+      <text x="80" y="78" text-anchor="middle" class="d-big">${esc(big)}</text>
+      <text x="80" y="98" text-anchor="middle" class="d-sub">${esc(sub)}</text></svg>`;
+  }
+
+  function budgetRow(c, d) {
+    const over = c.remaining < 0;
+    const pct = c.available > 0 ? Math.min(100, (c.spent / c.available) * 100) : (c.spent > 0 ? 100 : 0);
+    const proj = d.is_current && c.available > 0 && c.projected > c.spent ? Math.min(100, (c.projected / c.available) * 100) : null;
+    return `<div class="b-row click" data-id="${c.id || ""}">
+      <div class="row"><span class="b-name">${esc(c.icon || "")} ${esc(c.name)}</span>${c.rollover ? `<span class="pill" title="Unspent money carries over to next month">rollover</span>` : ""}
+        <div class="spacer"></div><span class="num ${over ? "over" : ""}">${over ? money(-c.remaining) + " over" : money(c.remaining) + " left"}</span></div>
+      <div class="bar ${barClass(c.available > 0 ? Math.round((c.spent / c.available) * 100) : null)}"><i style="width:${pct}%"></i>${proj != null && proj > pct ? `<b style="left:${proj}%" title="On pace for ${esc(money(c.projected))}"></b>` : ""}</div>
+      <div class="small muted">${money(c.spent)} of ${money(c.available)}${c.carry ? ` · ${c.carry > 0 ? "+" : ""}${money(c.carry)} rolled over` : ""}${c.avg3 ? ` · usually ${money0(c.avg3)}` : ""}</div>
+    </div>`;
+  }
+
   async function renderBudget(view) {
     const [d] = await Promise.all([api("/api/budget/insights", { query: { month: state.month } }), loadCategories()]);
-    const stats = Object.fromEntries(d.categories.map((c) => [c.id, c]));
-    const spendBudget = state.categories.filter((c) => !c.archived && c.kind !== "income" && c.kind !== "transfer").reduce((s, c) => s + (c.budget || 0), 0);
-    const unassigned = d.expected_income - spendBudget;
-
-    const section = (kind) => {
-      const cats = state.categories.filter((c) => c.kind === kind && !c.archived);
-      if (!cats.length) return "";
-      const showBudget = kind !== "income" && kind !== "transfer";
-      return `<tr><td colspan="6" class="kind-h" style="padding-top:18px">${KINDS[kind]}</td></tr>` + cats.map((c) => {
-        const s = stats[c.id] || { spent: 0, avg3: 0, suggested: 0, pct: null };
-        return `<tr data-id="${c.id}">
-          <td><button class="btn link edit-cat" style="color:inherit;font-weight:500">${esc(c.icon)} ${esc(c.name)}</button></td>
-          <td class="right">${showBudget ? `<input class="budget-input num" type="number" min="0" step="1" value="${c.budget || 0}" data-id="${c.id}">` : `<span class="muted">—</span>`}</td>
-          <td class="right num">${showBudget ? money(s.spent) : ""}</td>
-          <td class="right num hide-sm">${showBudget ? `<div class="bar ${barClass(s.pct)}" style="width:80px;display:inline-block;vertical-align:middle"><i style="width:${Math.min(100, s.pct || 0)}%"></i></div>` : ""}</td>
-          <td class="right num muted hide-sm">${showBudget ? money(s.avg3) : ""}</td>
-          <td class="right">${showBudget && s.suggested && s.suggested !== c.budget ? `<button class="btn sm use-sugg" data-id="${c.id}" data-v="${s.suggested}" title="Based on your 3-month average">Use ${money(s.suggested)}</button>` : ""}</td>
-        </tr>`;
-      }).join("");
-    };
+    const spendCats = d.categories.filter((c) => c.kind !== "income");
+    const budgeted = spendCats.filter((c) => c.budget > 0).sort((a, b) => b.available - a.available);
+    const unbudgeted = spendCats.filter((c) => !(c.budget > 0));
+    const ee = d.everything_else;
+    const hasBudget = d.budgeted > 0;
+    // bills are paid out of the spending budget, so only goals come off the top
+    const available = d.expected_income - d.goals_monthly;
+    const usedPct = hasBudget ? (d.spent / d.budgeted) * 100 : 0;
+    const ringCls = usedPct > 100 ? "bad" : usedPct >= 85 ? "warn" : "good";
+    const billsSorted = d.bill_list.slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+    const today = ymd(new Date());
+    const incomePct = d.expected_income > 0 ? Math.min(100, (d.income / d.expected_income) * 100) : 0;
 
     view.innerHTML = `
       <div class="stack">
-        <div class="grid kpis">
-          <div class="card kpi"><div class="label">Typical income</div><div class="value num">${money(d.expected_income)}</div><div class="sub">This month or 3-month average</div></div>
-          <div class="card kpi"><div class="label">Budgeted</div><div class="value num" id="budgeted-total">${money(spendBudget)}</div><div class="sub">Needs, wants &amp; savings</div></div>
-          <div class="card kpi"><div class="label">${unassigned >= 0 ? "Left to assign" : "Over-assigned"}</div><div class="value num" id="unassigned" style="color:${unassigned >= 0 ? "var(--good)" : "var(--bad)"}">${money(Math.abs(unassigned))}</div><div class="sub">Give every dollar a job</div></div>
-        </div>
-        <div class="card">
-          <div class="row" style="margin-bottom:8px">
-            <p class="muted small" style="margin:0">Budgets apply every month. Edit an amount and it saves automatically.</p>
-            <div class="spacer"></div>
-            <button class="btn" id="all-sugg">Fill empty budgets from history</button>
-            <button class="btn primary" id="add-cat">+ Category</button>
+        ${hasBudget ? `
+        <div class="card b-hero">
+          <div class="b-ring">${ring(usedPct, ringCls, money0(Math.abs(d.budget_left)), d.budget_left < 0 ? "over budget" : "left to spend")}
+            <div class="small muted center">${money(d.spent)} spent of ${money(d.budgeted)}</div>
+            ${d.is_current && d.remaining_days && d.budget_left > 0 ? `<div class="small center"><b class="num">${money(d.safe_per_day)}</b>/day for ${d.remaining_days} more days</div>` : ""}
           </div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Category</th><th class="right">Monthly budget</th><th class="right">Spent</th><th class="right hide-sm">Used</th><th class="right hide-sm">3-mo avg</th><th></th></tr></thead>
-            <tbody>${["needs", "wants", "savings", "income", "transfer"].map(section).join("")}</tbody>
-          </table></div>
-          ${state.categories.some((c) => c.archived) ? `<p class="small muted">${state.categories.filter((c) => c.archived).length} archived categor(ies) hidden.</p>` : ""}
+          <div class="b-math">
+            <div class="m-row"><span>Income <button class="btn link sm" id="edit-income">${d.income_override ? "edit" : "auto · edit"}</button></span><span class="num pos">${money(d.expected_income)}</span></div>
+            ${d.goals_monthly ? `<div class="m-row"><span>Savings goals <a class="small" href="#/goals">view</a></span><span class="num">−${money(d.goals_monthly)}</span></div>` : ""}
+            <div class="m-row total"><span>Available to budget</span><span class="num">${money(available)}</span></div>
+            <div class="m-row"><span>Your spending budget <button class="btn link sm" id="edit-total">edit</button></span><span class="num">${money(d.budgeted)}</span></div>
+            <div class="m-row small muted"><span>includes bills &amp; subscriptions <a href="#/recurring">view</a></span><span class="num">${money(d.bills.expenses)}</span></div>
+            ${d.budgeted > available + 1 && d.expected_income > 0 ? `<div class="callout small warn-c">Your budget is ${money(d.budgeted - available)} more than your income${d.goals_monthly ? " after goals" : ""}.</div>`
+              : d.expected_income > 0 && available - d.budgeted > 50 ? `<div class="callout small">${money(available - d.budgeted)} a month is left over after your budget. Put it toward savings or a goal.</div>` : ""}
+          </div>
+        </div>` : `
+        <div class="card b-empty">
+          <h2>Build your budget</h2>
+          <p class="muted">Pick one monthly spending number, then give the categories you care about their own slice. Everything else shares what's left.
+            ${d.avg_spend ? `You've spent about <b>${money(d.avg_spend)}</b> a month recently.` : ""}</p>
+          <button class="btn primary" id="wizard">Create budget</button>
+        </div>`}
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-h"><h2>Spending</h2><div class="spacer"></div>
+              ${hasBudget ? `<button class="btn sm" id="wizard">Re-plan</button>` : ""}<button class="btn sm primary" id="add-budget">+ Category budget</button></div>
+            ${budgeted.length ? budgeted.map((c) => budgetRow(c, d)).join("") : `<div class="muted small" style="margin-bottom:12px">No category budgets yet. Add one for anything you want to watch closely, like Dining Out or Groceries.</div>`}
+            ${hasBudget ? budgetRow({ id: "", name: "Everything else", icon: "📦", available: ee.budget, spent: ee.spent, remaining: ee.remaining, carry: 0, avg3: ee.avg3, projected: 0 }, d) : ""}
+            ${unbudgeted.filter((c) => c.spent > 0).length ? `<details class="else-list"><summary class="small muted">What's in “Everything else”</summary>
+              ${unbudgeted.filter((c) => c.spent > 0).sort((a, b) => b.spent - a.spent).map((c) => `<div class="acct-row"><span>${esc(c.icon)} ${esc(c.name)}</span><span class="num">${money(c.spent)}</span></div>`).join("")}
+              ${d.uncategorized.amount ? `<div class="acct-row"><a href="#/transactions?uncat=1">❔ Uncategorized</a><span class="num">${money(d.uncategorized.amount)}</span></div>` : ""}</details>` : ""}
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="card-h"><h2>Bills this month</h2><div class="spacer"></div><span class="small muted">${money(d.bills.paid_this_month)} paid · ${money(d.bills.remaining_this_month)} to go</span></div>
+              ${billsSorted.length ? billsSorted.map((b) => {
+                const status = b.paid ? `<span class="pill ok">✓ paid</span>` : b.date < today ? `<span class="pill err">not seen</span>` : `<span class="small muted">${dueText(Math.round((new Date(b.date) - new Date(today)) / 86400000))}</span>`;
+                return `<div class="bill-line">${avatar(b.name)}<div class="grow"><div class="t-name">${esc(b.name)}</div><div class="small muted">${prettyDate(b.date)}</div></div><div class="right"><div class="num">${money(b.paid ? b.paid_amount : b.amount)}</div>${status}</div></div>`;
+              }).join("") : `<div class="muted small">No bills tracked. <a href="#/recurring">Review recurring charges</a>.</div>`}
+            </div>
+            <div class="card">
+              <div class="card-h"><h2>Income</h2><div class="spacer"></div><span class="num pos">${money(d.income)}</span></div>
+              <div class="bar good"><i style="width:${incomePct}%"></i></div>
+              <div class="small muted" style="margin-top:6px">${money(d.income)} of ${money(d.expected_income)} expected${d.income_override ? "" : " (based on recent months)"}</div>
+            </div>
+            <div class="card">
+              <div class="card-h"><h2>50 / 30 / 20 check</h2></div>
+              <div class="split">
+                <i style="width:${Math.min(100, (d.split.needs / (d.expected_income || 1)) * 100)}%;background:var(--s1)"></i>
+                <i style="width:${Math.min(100, (d.split.wants / (d.expected_income || 1)) * 100)}%;background:var(--s2)"></i>
+                <i style="width:${Math.max(0, Math.min(100, (d.split.savings / (d.expected_income || 1)) * 100))}%;background:var(--s3)"></i>
+              </div>
+              <div class="legend">
+                <span style="--c:var(--s1)">Needs ${d.split.needs_pct}% <em class="muted">(≤50%)</em></span>
+                <span style="--c:var(--s2)">Wants ${d.split.wants_pct}% <em class="muted">(≤30%)</em></span>
+                <span style="--c:var(--s3)">Left / saved ${d.split.savings_pct}% <em class="muted">(≥20%)</em></span>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <details class="card manage"><summary><h2 style="display:inline">Manage categories</h2></summary>
+          <div class="row" style="margin:12px 0"><p class="muted small" style="margin:0">Category type drives the 50/30/20 check. Transfers never count as spending.</p><div class="spacer"></div><button class="btn sm primary" id="add-cat">+ Category</button></div>
+          <div class="table-wrap"><table><tbody>
+            ${Object.keys(KINDS).map((k) => { const list = state.categories.filter((c) => c.kind === k && !c.archived); return list.length ? `<tr><td colspan="3" class="kind-h">${KINDS[k]}</td></tr>` + list.map((c) => `<tr><td>${esc(c.icon)} ${esc(c.name)}</td><td class="right num muted">${c.budget ? money(c.budget) + "/mo" : ""}</td><td class="right"><button class="btn sm edit-cat" data-id="${c.id}">Edit</button></td></tr>`).join("") : ""; }).join("")}
+          </tbody></table></div>
+        </details>
       </div>`;
 
-    const saveBudget = async (id, value) => {
-      const v = Math.max(0, Number(value) || 0);
-      try {
-        await pb.collection("categories").update(id, { budget: v });
-        const c = catById(id); if (c) c.budget = v;
-        const total = state.categories.filter((c) => !c.archived && c.kind !== "income" && c.kind !== "transfer").reduce((s, c) => s + (c.budget || 0), 0);
-        $("#budgeted-total").textContent = money(total);
-        const un = d.expected_income - total;
-        const u = $("#unassigned"); u.textContent = money(Math.abs(un)); u.style.color = un >= 0 ? "var(--good)" : "var(--bad)";
-      } catch (err) { fail(err); }
-    };
-    $$(".budget-input", view).forEach((inp) => (inp.onchange = () => saveBudget(inp.dataset.id, inp.value)));
-    $$(".use-sugg", view).forEach((b) => (b.onclick = async () => { await saveBudget(b.dataset.id, b.dataset.v); route(); }));
-    $$(".edit-cat", view).forEach((b) => (b.onclick = () => editCategory(catById(b.closest("tr").dataset.id))));
+    const statsById = Object.fromEntries(d.categories.map((c) => [c.id, c]));
+    $$(".b-row", view).forEach((el) => (el.onclick = () => (el.dataset.id ? editCategoryBudget(statsById[el.dataset.id]) : editTotal(d))));
+    $$("#wizard", view).forEach((b) => (b.onclick = () => budgetWizard(d)));
+    $("#add-budget").onclick = () => addCategoryBudget(d);
+    const ei = $("#edit-income", view); if (ei) ei.onclick = () => editIncome(d);
+    const et = $("#edit-total", view); if (et) et.onclick = () => editTotal(d);
+    $$(".edit-cat", view).forEach((b) => (b.onclick = () => editCategory(catById(b.dataset.id))));
     $("#add-cat").onclick = () => editCategory(null);
-    $("#all-sugg").onclick = async () => {
-      const todo = d.categories.filter((c) => c.kind !== "income" && !c.budget && c.suggested);
-      if (!todo.length) return toast("No empty budgets with spending history.");
-      try { for (const c of todo) await pb.collection("categories").update(c.id, { budget: c.suggested }); toast(`Set ${todo.length} budget(s)`); route(); } catch (err) { fail(err); }
-    };
+  }
+
+  async function saveMe(data) {
+    const saved = await pb.collection("users").update(pb.authStore.record.id, data);
+    pb.authStore.save(pb.authStore.token, saved);
+  }
+
+  function editIncome(d) {
+    modal("Monthly income", `
+      <form id="inc-form" class="stack">
+        <p class="muted small" style="margin:0">Keel estimates income from recent deposits (${money(Math.max(d.income, 0))} so far this month). Set it yourself if your pay is irregular.</p>
+        <label class="field"><span>Expected monthly income (0 = automatic)</span><input name="v" type="number" min="0" step="1" value="${d.income_override || 0}"></label>
+        <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
+      </form>`, {
+      onMount: (m, close) => { $("#inc-form", m).onsubmit = async (e) => { e.preventDefault(); try { await saveMe({ income_override: Math.max(0, Number(new FormData(e.target).get("v")) || 0) }); close(); route(); } catch (err) { fail(err); } }; },
+    });
+  }
+
+  function editTotal(d) {
+    modal("Monthly spending budget", `
+      <form id="tot-form" class="stack">
+        <p class="muted small" style="margin:0">One number for everything you spend in a month, bills included. Category budgets (${money(d.category_budgeted)} now) come out of it; the rest is “Everything else”.</p>
+        <label class="field"><span>Total per month</span><input name="v" type="number" min="0" step="any" value="${Math.round(d.budget_setting || d.budgeted)}"></label>
+        ${d.avg_spend ? `<p class="small muted" style="margin:0">Recent average: ${money(d.avg_spend)}/month.</p>` : ""}
+        <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
+      </form>`, {
+      onMount: (m, close) => { $("#tot-form", m).onsubmit = async (e) => { e.preventDefault(); try { await saveMe({ budget_total: Math.max(0, Number(new FormData(e.target).get("v")) || 0) }); close(); route(); } catch (err) { fail(err); } }; },
+    });
+  }
+
+  function editCategoryBudget(c) {
+    modal(`${c.icon || ""} ${c.name}`.trim(), `
+      <form id="cb-form" class="stack">
+        <label class="field"><span>Monthly budget</span><input name="budget" type="number" min="0" step="any" value="${c.budget || 0}"></label>
+        ${c.suggested ? `<p class="small muted" style="margin:0">You've averaged ${money(c.avg3)}/month here. <button type="button" class="btn link sm" id="use-sugg">Use ${money(c.suggested)}</button></p>` : ""}
+        <label class="check"><input type="checkbox" name="rollover" ${c.rollover ? "checked" : ""}> Roll over: unspent money (or overspending) carries into next month</label>
+        <div class="actions">
+          ${c.budget ? `<button type="button" class="btn danger" id="cb-remove">Remove budget</button><div class="spacer"></div>` : ""}
+          <button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button>
+        </div>
+      </form>`, {
+      onMount: (m, close) => {
+        const form = $("#cb-form", m);
+        const save = async (budget, rollover) => { try { await pb.collection("categories").update(c.id, { budget, rollover }); close(); route(); } catch (err) { fail(err); } };
+        form.onsubmit = (e) => { e.preventDefault(); const fd = new FormData(form); save(Math.max(0, Number(fd.get("budget")) || 0), fd.has("rollover")); };
+        const us = $("#use-sugg", m); if (us) us.onclick = () => { $("[name=budget]", form).value = c.suggested; };
+        const rm = $("#cb-remove", m); if (rm) rm.onclick = () => save(0, false);
+      },
+    });
+  }
+
+  function addCategoryBudget(d) {
+    const options = d.categories.filter((c) => c.kind !== "income" && !(c.budget > 0)).sort((a, b) => b.avg3 - a.avg3);
+    if (!options.length) return toast("Every category already has a budget.");
+    modal("Add a category budget", `<div class="pick">${options.map((c) => `<button class="pick-i" data-id="${c.id}">${esc(c.icon)} ${esc(c.name)}<span class="spacer"></span><span class="small muted">${c.avg3 ? "avg " + money0(c.avg3) : ""}</span></button>`).join("")}</div>
+      <div class="actions"><button class="btn" data-close>Cancel</button></div>`, {
+      onMount: (m, close) => { $$(".pick-i", m).forEach((b) => (b.onclick = () => { close(); const c = options.find((x) => x.id === b.dataset.id); editCategoryBudget({ ...c, budget: c.suggested || 0 }); })); },
+    });
+  }
+
+  function budgetWizard(d) {
+    const cats = d.categories.filter((c) => c.kind !== "income").sort((a, b) => (b.budget || b.avg3) - (a.budget || a.avg3));
+    const autoInc = d.income_override ? d.income_override : d.expected_income;
+    const suggestedTotal = Math.round((d.budget_setting || d.budgeted || d.avg_spend || Math.max(0, d.expected_income - d.goals_monthly)) / 10) * 10;
+    modal("Create your budget", `
+      <form id="wz" class="stack">
+        <div class="wz-step"><div class="wz-n">1</div><div class="grow">
+          <b>Monthly income</b>
+          <p class="small muted">Based on your recent deposits. Change it if that's not right.</p>
+          <input name="income" type="number" min="0" step="any" value="${Math.round(autoInc)}" style="max-width:180px">
+        </div></div>
+        <div class="wz-step"><div class="wz-n">2</div><div class="grow">
+          <b>Bills &amp; subscriptions: ${money(d.bills.expenses)}/month</b>
+          <p class="small muted">Found from your recurring charges and counted inside your spending budget. <a href="#/recurring" data-close>Review them</a> any time.</p>
+        </div></div>
+        <div class="wz-step"><div class="wz-n">3</div><div class="grow">
+          <b>Total monthly spending budget</b>
+          <p class="small muted">${d.avg_spend ? `You've spent about ${money(d.avg_spend)} a month lately. ` : ""}<span id="wz-left"></span></p>
+          <input name="total" type="number" min="0" step="any" value="${suggestedTotal}" style="max-width:180px">
+        </div></div>
+        <div class="wz-step"><div class="wz-n">4</div><div class="grow">
+          <b>Categories to watch</b>
+          <p class="small muted">Tick the ones you want a separate limit for. Amounts start at your recent average. The rest go to “Everything else”.</p>
+          <div class="wz-cats">${cats.map((c, i) => {
+            const on = c.budget > 0 || (!d.category_budgeted && i < 5 && c.avg3 > 0 && (c.kind === "wants" || c.kind === "needs"));
+            return `<label class="wz-cat"><input type="checkbox" data-id="${c.id}" ${on ? "checked" : ""}><span class="grow">${esc(c.icon)} ${esc(c.name)}${c.avg3 ? ` <span class="small muted">avg ${money0(c.avg3)}</span>` : ""}</span>
+              <input type="number" min="0" step="any" class="wz-amt num" data-id="${c.id}" value="${c.budget || c.suggested || 0}"></label>`;
+          }).join("")}</div>
+          <p class="small" id="wz-sum"></p>
+        </div></div>
+        <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save budget</button></div>
+      </form>`, {
+      wide: true,
+      onMount: (m, close) => {
+        const form = $("#wz", m);
+        const recalc = () => {
+          const inc = Number(form.income.value) || 0, total = Number(form.total.value) || 0;
+          const after = inc - d.goals_monthly;
+          $("#wz-left", m).textContent = inc ? `This covers everything, bills included. Your income${d.goals_monthly ? " after goals" : ""} is ${money(after)}.` : "";
+          let sum = 0;
+          $$(".wz-cat", m).forEach((row) => { if ($("input[type=checkbox]", row).checked) sum += Number($(".wz-amt", row).value) || 0; });
+          const el = $("#wz-sum", m);
+          el.innerHTML = sum > total ? `<span style="color:var(--bad)">Category budgets add up to ${money(sum)}, more than the ${money(total)} total. The total will rise to match.</span>`
+            : `${money(sum)} in categories · <b>${money(total - sum)}</b> for everything else`;
+          if (inc && total > after) $("#wz-left", m).innerHTML += ` <b style="color:var(--bad)">This budget is ${esc(money(total - after))} more than that.</b>`;
+        };
+        $$("input", form).forEach((x) => (x.oninput = recalc));
+        recalc();
+        form.onsubmit = async (e) => {
+          e.preventDefault();
+          const btn = $("button.primary", form); btn.disabled = true;
+          try {
+            const inc = Math.max(0, Number(form.income.value) || 0);
+            await saveMe({ budget_total: Math.max(0, Number(form.total.value) || 0), income_override: Math.round(inc) === Math.round(d.expected_income) && !d.income_override ? 0 : inc });
+            for (const row of $$(".wz-cat", m)) {
+              const id = $("input[type=checkbox]", row).dataset.id;
+              const v = $("input[type=checkbox]", row).checked ? Math.max(0, Number($(".wz-amt", row).value) || 0) : 0;
+              const c = catById(id);
+              if (c && (c.budget || 0) !== v) await pb.collection("categories").update(id, { budget: v });
+            }
+            close(); toast("Budget saved"); route();
+          } catch (err) { fail(err); btn.disabled = false; }
+        };
+      },
+    });
   }
 
   function editCategory(cat) {
@@ -926,6 +1445,7 @@
                 <label class="field"><span>Large transaction alert ($)</span><input name="large_txn_threshold" type="number" min="0" step="1" value="${me.large_txn_threshold || 0}"></label>
               </div>
               <label class="check"><input type="checkbox" name="weekly_digest" ${me.weekly_digest ? "checked" : ""}> Weekly summary email</label>
+              <label class="check"><input type="checkbox" name="bill_reminders" ${me.bill_reminders ? "checked" : ""}> Email me 3 days before a bill or subscription is due</label>
               <label class="check"><input type="checkbox" name="update_notes" ${me.update_notes ? "checked" : ""}> Show what's new when Keel updates (top-right popup)</label>
               <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="digest-now" ${state.status.smtp ? "" : "disabled"}>Send me a summary now</button></div>
             </form>
@@ -952,7 +1472,7 @@
       const fd = new FormData(e.target);
       try {
         const saved = await pb.collection("users").update(me.id, {
-          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"),
+          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"), bill_reminders: fd.has("bill_reminders"),
           alert_threshold: Number(fd.get("alert_threshold")) || 90, large_txn_threshold: Number(fd.get("large_txn_threshold")) || 0,
         });
         pb.authStore.save(pb.authStore.token, saved);
@@ -1043,6 +1563,7 @@
   }
 
   window.addEventListener("hashchange", route);
+  bindTooltips();
   (async () => {
     try { state.status = await api("/api/budget/status"); } catch (_) {}
     loadedVersion.v = state.status.version || "";

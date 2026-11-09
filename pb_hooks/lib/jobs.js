@@ -44,6 +44,10 @@ function syncConnection(app, conn) {
 
 function afterNewTransactions(app, user, created) {
   const notify = require(`${__hooks}/lib/notify.js`);
+  try { require(`${__hooks}/lib/networth.js`).snapshot(app, user.id); } catch (err) { app.logger().error("net worth snapshot", "error", util.errMsg(err)); }
+  if (created.length) {
+    try { require(`${__hooks}/lib/recurring.js`).detect(app, user.id); } catch (err) { app.logger().error("recurring detect", "error", util.errMsg(err)); }
+  }
   try { notify.largeTransactions(app, user, created); } catch (err) { app.logger().error("large txn email", "error", util.errMsg(err)); }
   try { notify.checkBudgets(app, user); } catch (err) { app.logger().error("budget alert email", "error", util.errMsg(err)); }
 }
@@ -77,4 +81,14 @@ function digestAll(app) {
   eachUser(app, (u) => { if (u.getBool("weekly_digest") && u.getString("email")) notify.digest(app, u); });
 }
 
-module.exports = { syncConnection, syncUser, syncAll, alertsAll, digestAll, afterNewTransactions };
+// Daily: net worth snapshot and "bill due soon" emails.
+function dailyAll(app) {
+  const notify = require(`${__hooks}/lib/notify.js`);
+  const networth = require(`${__hooks}/lib/networth.js`);
+  eachUser(app, (u) => {
+    networth.snapshot(app, u.id);
+    notify.billReminders(app, u);
+  });
+}
+
+module.exports = { syncConnection, syncUser, syncAll, alertsAll, digestAll, dailyAll, afterNewTransactions };

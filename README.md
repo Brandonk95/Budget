@@ -3,8 +3,12 @@
 **Keep your money on an even keel.** Keel is a self-hosted budgeting app built on [PocketBase](https://pocketbase.io). It runs as one Docker container and updates itself automatically.
 
 - **Bank sync** through [SimpleFIN Bridge](https://beta-bridge.simplefin.org) (about $15/year). Balances and transactions sync every 6 hours. You can also import CSV files from any bank.
-- **Budgets** per category, grouped as needs, wants and savings. The app suggests amounts from your 3-month average and tracks how much income is left to assign.
-- **Insights**: a projection of month-end spending, a safe-to-spend amount per day, a 50/30/20 check, recurring and subscription detection, and a 6-month trend.
+- **One monthly budget, Rocket Money style.** Set a single spending number, give the categories you care about their own slice, and everything else shares the rest. A guided "Create budget" setup suggests amounts from your recent spending. Categories can roll unspent money (or overspending) into next month. The budget page shows what's left to spend, a safe amount per day, and this month's bills marked paid or due.
+- **Recurring bills, subscriptions and income** are found automatically from your history (weekly to yearly). A calendar shows what's due, and payments are matched as they post. Mark anything cancelled or "not recurring", or add your own. Optional email reminders go out 3 days before a bill is due.
+- **Spending** breakdown by category and merchant, with a 6-month trend.
+- **Net worth** over time: assets minus credit cards and loans, recorded daily (earlier history is estimated from transactions).
+- **Dashboard**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
+- **Insights**: month-end projections, a 50/30/20 check and plain-language tips.
 - **Auto-categorization**: your own rules ("contains *kroger* → Groceries") plus built-in guesses for common merchants. When you change a transaction's category, the app offers to turn it into a rule.
 - **Goals** with the monthly amount needed to hit each target date.
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
@@ -59,7 +63,7 @@ All settings are environment variables on the `keel` service, which you can edit
 | `SMTP_TLS` | `true` for implicit TLS (port 465). `false` for STARTTLS (port 587) or plain SMTP. |
 | `SMTP_AUTH_METHOD` | `PLAIN` (default) or `LOGIN`. |
 | `SMTP_SENDER_ADDRESS`, `SMTP_SENDER_NAME` | The "From" address and name. |
-| `SYNC_CRON`, `ALERT_CRON`, `DIGEST_CRON` | Schedules in UTC. Keep the sync schedule at 6 runs a day or fewer, because SimpleFIN allows about 24 requests a day. |
+| `SYNC_CRON`, `ALERT_CRON`, `DIGEST_CRON`, `DAILY_CRON` | Schedules in UTC. Keep the sync schedule at 6 runs a day or fewer, because SimpleFIN allows about 24 requests a day. `DAILY_CRON` (default 13:00) records net worth and sends bill reminders. |
 
 SMTP settings are applied each time the app starts. A Gmail example: `smtp.gmail.com`, port `587`, `SMTP_TLS=false`, with an [app password](https://support.google.com/accounts/answer/185833).
 
@@ -136,6 +140,9 @@ pb_hooks/        server logic (JS, runs inside PocketBase)
   lib/simplefin.js  SimpleFIN bank sync
   lib/ingest.js     shared account/transaction upserts
   lib/insights.js   budget analysis and tips
+  lib/recurring.js  recurring bill/subscription/income detection and calendar
+  lib/spending.js   category and merchant breakdowns
+  lib/networth.js   net worth snapshots and history
   lib/notify.js     SMTP emails
   lib/rules.js      auto-categorization and default categories
 pb_public/       web app (vanilla JS + PocketBase SDK)
@@ -151,4 +158,8 @@ assets/          app icon (used by CasaOS)
 | `POST /api/budget/import` | `{account, rows:[{date:"YYYY-MM-DD", amount, description}]}` |
 | `POST /api/budget/apply-rules` | Categorizes uncategorized transactions |
 | `GET /api/budget/insights?month=YYYY-MM` | Budget analysis for one month |
+| `GET /api/budget/spending?month=YYYY-MM` | Spending by category and merchant, plus a 6-month trend |
+| `GET /api/budget/recurring?month=YYYY-MM` | Recurring items, the month's calendar, upcoming bills and totals |
+| `POST /api/budget/recurring/detect` | Rescans transactions for recurring charges |
+| `GET /api/budget/networth?days=90` | Net worth now and over time |
 | `POST /api/budget/digest` | Emails you the weekly summary now |

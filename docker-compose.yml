@@ -50,6 +50,7 @@ services:
       SYNC_CRON: "0 */6 * * *"
       ALERT_CRON: "30 * * * *"
       DIGEST_CRON: "0 14 * * 1"
+      DAILY_CRON: "0 13 * * *"
     labels:
       - com.centurylinklabs.watchtower.enable=true
       - com.centurylinklabs.watchtower.scope=keel
@@ -137,9 +138,10 @@ x-casaos:
     en_US: Keep your money on an even keel
   description:
     en_US: |
-      Self-hosted budgeting with bank sync. Sync your banks with SimpleFIN Bridge (or import CSVs),
-      set category budgets, and get insights: safe-to-spend per day, month-end projections, a 50/30/20 check,
-      recurring charge detection, savings goals, and email alerts plus a weekly summary over SMTP.
+      Self-hosted budgeting with bank sync, in the style of Rocket Money. Sync your banks with SimpleFIN Bridge
+      (or import CSVs), set one monthly budget with category limits and rollover, track bills and subscriptions
+      on a calendar, and see spending breakdowns and net worth over time. Email alerts, bill reminders and a
+      weekly summary over SMTP.
       Updates itself automatically.
   tips:
     before_install:

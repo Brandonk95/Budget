@@ -26,6 +26,7 @@ onRecordCreate((e) => {
     e.record.set("large_txn_threshold", 500);
     e.record.set("weekly_digest", true);
     e.record.set("update_notes", true);
+    e.record.set("bill_reminders", true);
   }
   // new accounts start on the current release, so they don't get an update popup right away
   if (!e.record.getString("last_seen_version")) {
@@ -55,8 +56,16 @@ onRecordCreateRequest((e) => {
   if (name === "transactions") { owned("accounts", rec.getString("account")); owned("categories", rec.getString("category")); }
   if (name === "rules") owned("categories", rec.getString("category"));
   if (name === "accounts") { rec.set("connection", ""); rec.set("external_id", ""); }
+  if (name === "recurring") {
+    owned("accounts", rec.getString("account")); owned("categories", rec.getString("category"));
+    rec.set("source", "manual");
+    rec.set("edited", true);
+    if (!rec.getString("status")) rec.set("status", "active");
+    // match future payments by the name the user typed
+    if (!rec.getString("merchant_key")) rec.set("merchant_key", require(`${__hooks}/lib/recurring.js`).normalizePayee(rec.getString("name")));
+  }
   e.next();
-}, "transactions", "rules", "accounts");
+}, "transactions", "rules", "accounts", "recurring");
 
 onRecordUpdateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();
@@ -76,8 +85,15 @@ onRecordUpdateRequest((e) => {
     rec.set("connection", orig.getString("connection"));
     rec.set("external_id", orig.getString("external_id"));
   }
+  if (name === "recurring") {
+    owned("accounts", rec.getString("account")); owned("categories", rec.getString("category"));
+    const orig = rec.original();
+    rec.set("merchant_key", orig.getString("merchant_key"));
+    rec.set("source", orig.getString("source"));
+    rec.set("edited", true);
+  }
   e.next();
-}, "transactions", "rules", "accounts");
+}, "transactions", "rules", "accounts", "recurring");
 
 // Auto-categorize manually created transactions.
 onRecordCreateRequest((e) => {
@@ -179,6 +195,27 @@ routerAdd("GET", "/api/budget/insights", (e) => {
   return e.json(200, insights.compute(e.app, e.auth.id, month));
 }, $apis.requireAuth("users"));
 
+routerAdd("GET", "/api/budget/spending", (e) => {
+  const spending = require(`${__hooks}/lib/spending.js`);
+  return e.json(200, spending.compute(e.app, e.auth.id, e.request.url.query().get("month")));
+}, $apis.requireAuth("users"));
+
+routerAdd("GET", "/api/budget/recurring", (e) => {
+  const recurring = require(`${__hooks}/lib/recurring.js`);
+  return e.json(200, recurring.list(e.app, e.auth.id, e.request.url.query().get("month")));
+}, $apis.requireAuth("users"));
+
+routerAdd("POST", "/api/budget/recurring/detect", (e) => {
+  const recurring = require(`${__hooks}/lib/recurring.js`);
+  return e.json(200, recurring.detect(e.app, e.auth.id));
+}, $apis.requireAuth("users"));
+
+routerAdd("GET", "/api/budget/networth", (e) => {
+  const networth = require(`${__hooks}/lib/networth.js`);
+  const days = parseInt(e.request.url.query().get("days"), 10) || 90;
+  return e.json(200, networth.history(e.app, e.auth.id, days));
+}, $apis.requireAuth("users"));
+
 routerAdd("POST", "/api/budget/digest", (e) => {
   const notify = require(`${__hooks}/lib/notify.js`);
   if (!notify.smtpReady(e.app)) throw new BadRequestError("SMTP isn't configured. Set SMTP_* in .env and restart.");
@@ -213,4 +250,9 @@ cronAdd("budget_alerts", $os.getenv("ALERT_CRON") || "30 * * * *", () => {
 
 cronAdd("budget_digest", $os.getenv("DIGEST_CRON") || "0 14 * * 1", () => {
   require(`${__hooks}/lib/jobs.js`).digestAll($app);
+});
+
+// net worth snapshot + bill reminders
+cronAdd("budget_daily", $os.getenv("DAILY_CRON") || "0 13 * * *", () => {
+  require(`${__hooks}/lib/jobs.js`).dailyAll($app);
 });

@@ -101,11 +101,29 @@ function syncFailed(app, user, conn, message) {
       <p>If this keeps happening, reconnect the bank from the Accounts page.</p>`));
 }
 
+// Emails bills/subscriptions due in the next `days` days (each occurrence once).
+function billReminders(app, user, days) {
+  days = days || 3;
+  if (!user.getBool("bill_reminders") || !user.getString("email")) return 0;
+  const recurring = require(`${__hooks}/lib/recurring.js`);
+  const data = recurring.list(app, user.id, util.currentMonth());
+  const due = data.upcoming.filter((u) => u.kind !== "income" && u.days_until >= 0 && u.days_until <= days)
+    .filter((u) => claimKey(app, user.id, `bill:${u.id}:${u.date}`));
+  if (!due.length) return 0;
+  const total = due.reduce((s, u) => s + u.amount, 0);
+  const when = (n) => (n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`);
+  const rows = due.map((u) => row([util.esc(u.name), `${u.date.slice(5)} (${when(u.days_until)})`, util.money(u.amount)]));
+  const subject = due.length === 1 ? `${due[0].name} is due ${when(due[0].days_until)}` : `${due.length} bills due soon (${util.money(total)})`;
+  send(app, user.getString("email"), subject, layout(app, "Upcoming bills",
+    `<p>Make sure there's enough in the account to cover these:</p>${table(rows)}<p>Total: <b>${util.money(total)}</b></p>`));
+  return due.length;
+}
+
 function digest(app, user) {
   const insights = require(`${__hooks}/lib/insights.js`);
   const data = insights.compute(app, user.id, util.currentMonth());
   const weekAgo = util.dateFromJs(new Date(Date.now() - 7 * 86400000));
-  const week = app.findRecordsByFilter("transactions", "user = {:u} && date >= {:d} && account.on_budget = true && amount < 0 && (category = '' || category.kind != 'transfer')", "amount", 0, 0, { u: user.id, d: weekAgo });
+  const week = app.findRecordsByFilter("transactions", "user = {:u} && date >= {:d} && account.on_budget = true && exclude = false && amount < 0 &&(category = '' || category.kind != 'transfer')", "amount", 0, 0, { u: user.id, d: weekAgo });
   const weekSpend = week.reduce((s, t) => s - t.getFloat("amount"), 0);
   const top = week.slice(0, 5).map((t) => row([util.esc(t.getString("payee") || t.getString("description")), util.money(t.getFloat("amount"))]));
 
@@ -113,14 +131,21 @@ function digest(app, user) {
     .sort((a, b) => (b.pct || 0) - (a.pct || 0)).slice(0, 8)
     .map((c) => row([`${util.esc(c.icon)} ${util.esc(c.name)}`, util.money(c.spent), c.budget ? util.money(c.budget) : "—", c.pct != null ? c.pct + "%" : ""]));
 
+  let bills = [];
+  try {
+    bills = require(`${__hooks}/lib/recurring.js`).list(app, user.id, util.currentMonth()).upcoming
+      .filter((u) => u.kind !== "income" && u.days_until >= 0 && u.days_until <= 7)
+      .map((u) => row([util.esc(u.name), u.date.slice(5), util.money(u.amount)]));
+  } catch (_) {}
   const tips = data.tips.slice(0, 5).map((t) => `<li style="margin-bottom:6px">${util.esc(t.text)}</li>`).join("");
   const html = layout(app, `Your weekly budget check-in`, `
     <p>Last 7 days you spent <b>${util.money(weekSpend)}</b>. Month to date: <b>${util.money(data.spent)}</b> of <b>${util.money(data.budgeted)}</b> budgeted, income <b>${util.money(data.income)}</b>.</p>
     <p>Safe to spend for the rest of ${data.month}: <b>${util.money(data.safe_per_day)}/day</b> (${data.remaining_days} days left).</p>
     ${cats.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Categories</h3>${table([row(["", "Spent", "Budget", "Used"], true)].concat(cats))}` : ""}
+    ${bills.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Bills due in the next 7 days</h3>${table(bills)}` : ""}
     ${top.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Biggest purchases this week</h3>${table(top)}` : ""}
     ${tips ? `<h3 style="font-size:15px;margin:20px 0 6px">Tips</h3><ul style="padding-left:18px;margin:0">${tips}</ul>` : ""}`);
   return send(app, user.getString("email"), `Weekly budget: ${util.money(weekSpend)} spent this week`, html);
 }
 
-module.exports = { send, layout, checkBudgets, largeTransactions, syncFailed, digest, smtpReady };
+module.exports = { send, layout, checkBudgets, largeTransactions, syncFailed, digest, billReminders, smtpReady };
