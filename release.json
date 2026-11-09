@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "released": "2026-11-09",
-  "motd": "Welcome to Keel 1.0: free bank sync with Teller, smarter spending insights, and update notes like this one. You can turn these off in Settings."
+  "motd": "Bank sync is now SimpleFIN only: Teller support has been removed. Connect or manage banks under Accounts. Your existing accounts and history are unchanged."
 }

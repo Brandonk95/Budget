@@ -2,7 +2,7 @@
 
 **Keep your money on an even keel.** Keel is a self-hosted budgeting app built on [PocketBase](https://pocketbase.io). It runs as one Docker container and updates itself automatically.
 
-- **Bank sync** through [Teller](https://teller.io), which is free for personal use, or [SimpleFIN Bridge](https://beta-bridge.simplefin.org) (about $15/year). Balances and transactions sync every 6 hours. You can also import CSV files from any bank.
+- **Bank sync** through [SimpleFIN Bridge](https://beta-bridge.simplefin.org) (about $15/year). Balances and transactions sync every 6 hours. You can also import CSV files from any bank.
 - **Budgets** per category, grouped as needs, wants and savings. The app suggests amounts from your 3-month average and tracks how much income is left to assign.
 - **Insights**: a projection of month-end spending, a safe-to-spend amount per day, a 50/30/20 check, recurring and subscription detection, and a 6-month trend.
 - **Auto-categorization**: your own rules ("contains *kroger* → Groceries") plus built-in guesses for common merchants. When you change a transaction's category, the app offers to turn it into a rule.
@@ -14,7 +14,7 @@
 
 `docker-compose.yml` is self-contained. It needs no `.env` file and no repo checkout. All data goes in `/DATA/AppData/keel`.
 
-**Before the first install:** push this repo to `main` once so GitHub Actions publishes the images. Then set both packages, `keel` and `keel-teller-proxy`, to **Public** under **GitHub → your profile → Packages → Package settings**.
+**Before the first install:** push this repo to `main` once so GitHub Actions publishes the images. Then set the `keel` package to **Public** under **GitHub → your profile → Packages → Package settings**.
 
 ### CasaOS / ZimaOS
 
@@ -24,7 +24,6 @@
    - `APP_URL`: the address you'll open Keel at, e.g. `http://192.168.1.10:8095`.
    - `PB_ADMIN_PASSWORD`: change it.
    - `SMTP_*`: fill these in if you want email.
-   - `TELLER_APP_ID`: fill it in if you want Teller bank sync.
 4. Install, then open Keel from the dashboard and create your account.
 5. Afterwards, set `ALLOW_SIGNUPS` to `false` in the app's settings so nobody else can register.
 
@@ -60,9 +59,6 @@ All settings are environment variables on the `keel` service, which you can edit
 | `SMTP_TLS` | `true` for implicit TLS (port 465). `false` for STARTTLS (port 587) or plain SMTP. |
 | `SMTP_AUTH_METHOD` | `PLAIN` (default) or `LOGIN`. |
 | `SMTP_SENDER_ADDRESS`, `SMTP_SENDER_NAME` | The "From" address and name. |
-| `TELLER_APP_ID` | Your Teller application ID. Leave it empty to hide the Teller option. |
-| `TELLER_ENV` | `sandbox` (fake data, no certificate), `development` (real banks, free, up to 100 bank logins) or `production`. |
-| `TELLER_API_URL` | Optional. Overrides the Teller API address. |
 | `SYNC_CRON`, `ALERT_CRON`, `DIGEST_CRON` | Schedules in UTC. Keep the sync schedule at 6 runs a day or fewer, because SimpleFIN allows about 24 requests a day. |
 
 SMTP settings are applied each time the app starts. A Gmail example: `smtp.gmail.com`, port `587`, `SMTP_TLS=false`, with an [app password](https://support.google.com/accounts/answer/185833).
@@ -71,32 +67,11 @@ To test email, open **Settings → Send me a summary now**.
 
 ## Connecting your bank
 
-### Teller (free, recommended)
-
-Teller's **development** environment connects to real banks at no cost, for up to 100 bank logins. That is plenty for a household.
-
-1. Sign up at [teller.io](https://teller.io) and copy your **Application ID** into `TELLER_APP_ID`.
-2. In the Teller dashboard, download your client certificate. Upload `certificate.pem` and `private_key.pem` to `/DATA/AppData/keel/teller`. On CasaOS, use the **Files** app. The proxy picks them up within a minute, with no restart needed.
-3. Keep `TELLER_ENV=development`.
-4. In Keel, go to **Accounts → Connect bank → Connect with Teller** and log in to your bank in Teller's window.
-
-**Why the extra container?** For real bank data, Teller requires mutual TLS: every request has to present your client certificate. PocketBase's HTTP client can't do that. The `teller-proxy` service is a small nginx container on the internal Docker network. It adds the certificate and forwards requests to `api.teller.io`. It isn't published on any host port. It sits idle until the certificate files exist, so it's harmless if you never use Teller.
-
-To try the flow with fake data first, set `TELLER_ENV=sandbox`. No certificate is needed for that. Then log in with username `username` and password `password`.
-
-The Teller access token stays on your server and is never sent to the browser. The first sync pulls about 6 months of history and uses Teller's merchant categories to pre-fill yours. Sometimes a bank asks you to log in again, for example after you change your password or when it needs MFA. When that happens, the connection shows **Reconnect needed** and you get an email. Click **Reconnect** to fix it. Clicking **Disconnect** revokes Teller's access and keeps your history as manual accounts.
-
-If a bank reports card purchases as positive amounts, tick **Flip ±** on that account. The fix applies from the next sync.
-
-### SimpleFIN Bridge (fallback)
-
-Use this when Teller doesn't support your bank.
-
 1. Sign up at [SimpleFIN Bridge](https://beta-bridge.simplefin.org) (about $1.50 a month) and link your banks there.
 2. Create a new app connection and copy the **setup token**.
 3. In Keel, go to **Accounts → Connect bank** and paste the token.
 
-The token can only be used once. It is exchanged for an access URL that stays on your server. The first sync pulls up to 90 days of history.
+The token can only be used once. It is exchanged for an access URL that stays on your server. The first sync pulls up to 90 days of history. If a bank reports card purchases as positive amounts, tick **Flip ±** on that account. The fix applies from the next sync.
 
 New synced accounts start like this: checking and credit accounts count toward your budget, and savings and investment accounts don't. You can change the "In budget" setting for each account. Mark card payments and moves between your own accounts as **Transfers** or **Credit Card Payment** so they aren't counted as spending.
 
@@ -158,14 +133,12 @@ release.json     version + "message of the day" shown after updates
 pb_migrations/   schema (collections, API rules, indexes)
 pb_hooks/        server logic (JS, runs inside PocketBase)
   main.pb.js     routes, record hooks, cron jobs
-  lib/teller.js     Teller bank sync
   lib/simplefin.js  SimpleFIN bank sync
   lib/ingest.js     shared account/transaction upserts
   lib/insights.js   budget analysis and tips
   lib/notify.js     SMTP emails
   lib/rules.js      auto-categorization and default categories
 pb_public/       web app (vanilla JS + PocketBase SDK)
-teller-proxy/    image for the Teller mTLS proxy (nginx; waits for the certificate)
 assets/          app icon (used by CasaOS)
 ```
 
@@ -173,7 +146,6 @@ assets/          app icon (used by CasaOS)
 
 | Route | |
 | --- | --- |
-| `POST /api/budget/teller/enroll` | `{access_token, enrollment_id, institution, connection?}`: saves a Teller Connect enrollment and syncs it |
 | `POST /api/budget/connect` | `{setup_token, name}`: claims the SimpleFIN token and runs the first sync |
 | `POST /api/budget/sync` | Syncs all of your connections now |
 | `POST /api/budget/import` | `{account, rows:[{date:"YYYY-MM-DD", amount, description}]}` |

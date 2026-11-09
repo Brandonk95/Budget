@@ -1,5 +1,5 @@
 // Provider-neutral storage of synced accounts and transactions.
-// Providers (simplefin.js, teller.js) normalize their data and hand it here.
+// The bank provider (simplefin.js) normalizes their data and hand it here.
 
 const util = require(`${__hooks}/lib/util.js`);
 

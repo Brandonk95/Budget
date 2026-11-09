@@ -12,13 +12,6 @@ permissions:
 jobs:
   image:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: keel
-            context: .
-          - name: keel-teller-proxy
-            context: ./teller-proxy
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +19,7 @@ jobs:
         id: meta
         run: |
           echo "version=$(jq -r .version release.json)" >> "$GITHUB_OUTPUT"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/keel" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -38,12 +31,12 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ${{ matrix.context }}
+          context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ steps.meta.outputs.image }}:latest
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
             ${{ steps.meta.outputs.image }}:sha-${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          cache-from: type=gha,scope=keel
+          cache-to: type=gha,mode=max,scope=keel

@@ -112,50 +112,6 @@ routerAdd("POST", "/api/budget/connect", (e) => {
   return e.json(200, { connection: conn.id, sync: jobs.syncConnection(e.app, conn) });
 }, $apis.requireAuth("users"));
 
-// Save a Teller Connect enrollment (new, or a reconnect of an existing one).
-routerAdd("POST", "/api/budget/teller/enroll", (e) => {
-  const util = require(`${__hooks}/lib/util.js`);
-  const teller = require(`${__hooks}/lib/teller.js`);
-  const jobs = require(`${__hooks}/lib/jobs.js`);
-  if (!teller.config().appId) throw new BadRequestError("Teller isn't configured (set TELLER_APP_ID).");
-  const body = e.requestInfo().body || {};
-  const token = String(body.access_token || "");
-  if (!/^[A-Za-z0-9_\-]{8,200}$/.test(token)) throw new BadRequestError("Invalid Teller access token.");
-  const enrollmentId = String(body.enrollment_id || "").slice(0, 200);
-  const institution = String(body.institution || "").slice(0, 200);
-
-  // confirm the token works before storing it
-  try { teller.request(token, "GET", "/accounts"); } catch (err) { throw new BadRequestError("Teller rejected the enrollment: " + util.errMsg(err)); }
-
-  let conn = null;
-  const lookup = body.connection
-    ? ["id = {:c} && user = {:u}", { c: String(body.connection), u: e.auth.id }]
-    : (enrollmentId ? ["enrollment_id = {:en} && user = {:u}", { en: enrollmentId, u: e.auth.id }] : null);
-  if (lookup) { try { conn = e.app.findFirstRecordByFilter("bank_connections", lookup[0], lookup[1]); } catch (_) {} }
-  if (!conn) {
-    conn = new Record(e.app.findCollectionByNameOrId("bank_connections"));
-    conn.set("user", e.auth.id);
-    conn.set("provider", "teller");
-    conn.set("name", institution || "Teller");
-  }
-  conn.set("secret", token);
-  if (enrollmentId) conn.set("enrollment_id", enrollmentId);
-  if (institution) conn.set("institution", institution);
-  conn.set("status", "ok");
-  conn.set("last_error", "");
-  e.app.save(conn);
-  return e.json(200, { connection: conn.id, sync: jobs.syncConnection(e.app, conn) });
-}, $apis.requireAuth("users"));
-
-// Revoke Teller access when a connection is removed.
-onRecordDeleteRequest((e) => {
-  const rec = e.record;
-  e.next();
-  if (rec.getString("provider") === "teller" && rec.getString("secret")) {
-    require(`${__hooks}/lib/teller.js`).revoke(rec.getString("secret"));
-  }
-}, "bank_connections");
-
 routerAdd("POST", "/api/budget/sync", (e) => {
   const jobs = require(`${__hooks}/lib/jobs.js`);
   return e.json(200, jobs.syncUser(e.app, e.auth.id));
@@ -236,7 +192,6 @@ routerAdd("POST", "/api/budget/digest", (e) => {
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/status", (e) => {
-  const t = require(`${__hooks}/lib/teller.js`).config();
   const rel = require(`${__hooks}/lib/release.js`).info();
   return e.json(200, {
     version: rel.version,
@@ -244,7 +199,6 @@ routerAdd("GET", "/api/budget/status", (e) => {
     motd: rel.motd,
     smtp: e.app.settings().smtp.enabled,
     app_name: e.app.settings().meta.appName,
-    teller: t.appId ? { app_id: t.appId, environment: t.env } : null,
   });
 });
 

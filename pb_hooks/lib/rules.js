@@ -36,7 +36,7 @@ function categorize(ctx, tx) {
   for (const r of ctx.rules) {
     if (text.indexOf(r.pattern) !== -1) return r.category;
   }
-  // provider-supplied category (e.g. Teller enrichment) beats keyword guesses
+  // provider-supplied category hint beats keyword guesses
   if (tx.hint) {
     const id = ctx.byName[String(tx.hint).toLowerCase()];
     if (id && !(tx.hint === "Paycheck" && tx.amount <= 0)) return id;

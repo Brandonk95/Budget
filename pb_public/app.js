@@ -597,15 +597,13 @@
           ${conns.length ? conns.map((c) => `
             <div class="callout" style="margin-bottom:12px">
               <div class="row"><b>${esc(c.name)}</b>
-                <span class="pill">${c.provider === "teller" ? "Teller" : "SimpleFIN"}</span>
-                <span class="pill ${c.status === "ok" ? "ok" : "err"}">${c.status === "reconnect" ? "reconnect needed" : c.status === "error" ? "needs attention" : "connected"}</span>
+                <span class="pill ${c.status === "ok" ? "ok" : "err"}">${c.status === "ok" ? "connected" : "needs attention"}</span>
                 <span class="small muted">${c.last_sync ? "Last sync " + new Date(c.last_sync.replace(" ", "T")).toLocaleString() : "Never synced"}</span>
                 <div class="spacer"></div>
-                ${c.provider === "teller" && c.status !== "ok" && state.status.teller ? `<button class="btn sm primary conn-reconnect" data-id="${c.id}">Reconnect</button>` : ""}
                 <button class="btn sm danger conn-del" data-id="${c.id}">Disconnect</button></div>
               ${c.last_error ? `<div class="small" style="color:var(--${c.status === "ok" ? "muted" : "bad"});margin-top:6px">${esc(c.last_error)}</div>` : ""}
               <div style="margin-top:10px">${accTable(byConn[c.id])}</div>
-            </div>`).join("") : `<div class="muted">Connect your bank to sync balances and transactions automatically${state.status.teller ? " with Teller" : ` (set up <a href="https://teller.io" target="_blank" rel="noopener">Teller</a> in .env for free syncing, or use SimpleFIN Bridge)`}, or use manual accounts with CSV import below.</div>`}
+            </div>`).join("") : `<div class="muted">Connect your bank through <a href="https://beta-bridge.simplefin.org" target="_blank" rel="noopener">SimpleFIN Bridge</a> to sync balances and transactions automatically, or use manual accounts with CSV import below.</div>`}
         </div>
 
         <div class="card">
@@ -644,81 +642,9 @@
       } catch (err) { fail(err); }
       route();
     };
-    $("#connect").onclick = connectDialog;
-    $$(".conn-reconnect", view).forEach((b) => (b.onclick = () => openTeller(conns.find((c) => c.id === b.dataset.id))));
+    $("#connect").onclick = simplefinDialog;
     $("#add-acc").onclick = addAccountDialog;
     $("#import-csv").onclick = () => importDialog();
-  }
-
-  function loadTellerScript() {
-    if (window.TellerConnect) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const sc = document.createElement("script");
-      sc.src = "https://cdn.teller.io/connect/connect.js";
-      sc.onload = resolve;
-      sc.onerror = () => reject(new Error("Couldn't load Teller Connect. Check your connection or ad blocker."));
-      document.head.appendChild(sc);
-    });
-  }
-
-  // Opens Teller Connect. Pass an existing connection to repair a disconnected enrollment.
-  async function openTeller(connection) {
-    const t = state.status.teller;
-    try { await loadTellerScript(); } catch (err) { return fail(err); }
-    const tc = window.TellerConnect.setup({
-      applicationId: t.app_id,
-      environment: t.environment,
-      products: ["balance", "transactions"],
-      selectAccount: "multiple",
-      ...(connection && connection.enrollment_id ? { enrollmentId: connection.enrollment_id } : {}),
-      onSuccess: async (enr) => {
-        toast("Bank linked, syncing…");
-        try {
-          let r;
-          if (enr && enr.accessToken) {
-            r = await api("/api/budget/teller/enroll", { method: "POST", body: {
-              access_token: enr.accessToken,
-              enrollment_id: enr.enrollment && enr.enrollment.id,
-              institution: enr.enrollment && enr.enrollment.institution && enr.enrollment.institution.name,
-              connection: connection ? connection.id : "",
-            } });
-            r = r.sync;
-          } else {
-            r = await api("/api/budget/sync", { method: "POST" });
-          }
-          toast(`Synced ${r.accounts} account(s), ${r.new_transactions} new transaction(s)`);
-          if (r.errors && r.errors.length) toast(r.errors.join("; "), true);
-        } catch (err) { fail(err); }
-        route();
-      },
-    });
-    tc.open();
-  }
-
-  function connectDialog() {
-    if (state.status.teller) {
-      modal("Connect a bank", `
-        <div class="stack">
-          <div class="callout">
-            <b>Teller</b> <span class="pill">recommended · free</span>
-            <p class="small muted" style="margin:6px 0 10px">Log in to your bank in Teller's secure window. This server gets read-only access, and your bank password never touches this app.</p>
-            <button class="btn primary" id="go-teller">Connect with Teller</button>
-          </div>
-          <div class="callout">
-            <b>SimpleFIN Bridge</b> <span class="pill">~$15/yr</span>
-            <p class="small muted" style="margin:6px 0 10px">Use this if Teller doesn't support your bank.</p>
-            <button class="btn" id="go-sfin">Use a SimpleFIN setup token</button>
-          </div>
-          <div class="actions"><button class="btn" data-close>Cancel</button></div>
-        </div>`, {
-        onMount: (m, close) => {
-          $("#go-teller", m).onclick = () => { close(); openTeller(null); };
-          $("#go-sfin", m).onclick = () => { close(); simplefinDialog(); };
-        },
-      });
-      return;
-    }
-    simplefinDialog();
   }
 
   function simplefinDialog() {

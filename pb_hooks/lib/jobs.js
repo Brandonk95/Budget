@@ -3,10 +3,7 @@
 const util = require(`${__hooks}/lib/util.js`);
 
 function syncUser(app, userId) {
-  const providers = {
-    simplefin: require(`${__hooks}/lib/simplefin.js`),
-    teller: require(`${__hooks}/lib/teller.js`),
-  };
+  const simplefin = require(`${__hooks}/lib/simplefin.js`);
   const notify = require(`${__hooks}/lib/notify.js`);
   const user = app.findRecordById("users", userId);
   const conns = app.findRecordsByFilter("bank_connections", "user = {:u}", "", 0, 0, { u: userId });
@@ -14,18 +11,16 @@ function syncUser(app, userId) {
   let created = [];
   for (const conn of conns) {
     try {
-      const res = (providers[conn.getString("provider")] || providers.simplefin).syncConnection(app, conn);
+      const res = simplefin.syncConnection(app, conn);
       summary.accounts += res.accounts;
       created = created.concat(res.newTransactions);
       if (res.errors.length) summary.errors.push(conn.getString("name") + ": " + res.errors.join("; "));
     } catch (err) {
       const msg = util.errMsg(err);
       summary.errors.push((conn.getString("name") || "bank") + ": " + msg);
-      if (conn.getString("status") !== "reconnect") {
-        conn.set("status", "error");
-        conn.set("last_error", msg);
-        try { app.save(conn); } catch (_) {}
-      }
+      conn.set("status", "error");
+      conn.set("last_error", msg);
+      try { app.save(conn); } catch (_) {}
       try { notify.syncFailed(app, user, conn, msg); } catch (e2) { app.logger().error("sync failure email", "error", util.errMsg(e2)); }
     }
   }
@@ -36,7 +31,7 @@ function syncUser(app, userId) {
 
 // Sync a single connection right after it's added (doesn't spend other connections' quota).
 function syncConnection(app, conn) {
-  const provider = require(`${__hooks}/lib/${conn.getString("provider") === "teller" ? "teller" : "simplefin"}.js`);
+  const provider = require(`${__hooks}/lib/simplefin.js`);
   const user = app.findRecordById("users", conn.getString("user"));
   try {
     const res = provider.syncConnection(app, conn);
