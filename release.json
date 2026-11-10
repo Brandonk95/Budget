@@ -1,5 +1,5 @@
 {
-  "version": "2.7.0",
+  "version": "2.7.1",
   "released": "2026-11-10",
   "motd": "Keel now notices when a subscription stops charging. Miss one charge and it's flagged as possibly cancelled; miss the next one too and it's marked cancelled for you. If it charges again, it switches back on by itself."
 }
