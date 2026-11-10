@@ -1,7 +1,7 @@
 /* Keel service worker: makes the app installable and lets it open without a connection.
    Network first for everything, so auto-updates show up right away; the cache is only a
    fallback. API calls and the admin UI are never cached. */
-const CACHE = "keel-shell-v1";
+const CACHE = "keel-shell-v2";
 const SHELL = [
   "./",
   "index.html",
@@ -35,8 +35,11 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/_/")) return;
 
+  // skip the browser's HTTP cache too, so a stale copy there can't hide an update
+  // (a navigation request can't be re-created with options, but the page is never cached long)
+  const net = req.mode === "navigate" ? fetch(req) : fetch(req, { cache: "no-cache" });
   e.respondWith(
-    fetch(req)
+    net
       .then((res) => {
         if (res.ok && res.type === "basic") {
           const copy = res.clone();

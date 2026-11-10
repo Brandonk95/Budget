@@ -24,6 +24,11 @@ COPY pb_migrations ./pb_migrations
 COPY pb_hooks ./pb_hooks
 COPY pb_public ./pb_public
 COPY release.json ./release.json
+# Stamp the app's asset URLs with a hash of their contents (app.js?v=...), so a browser,
+# the service worker or a CDN like Cloudflare can never keep serving code from an old build.
+RUN v=$(cat pb_public/app.js pb_public/styles.css | md5sum | cut -c1-10) \
+ && sed -i "s|href=\"styles.css\"|href=\"styles.css?v=$v\"|; s|src=\"app.js\"|src=\"app.js?v=$v\"|" pb_public/index.html \
+ && grep -q "app.js?v=$v" pb_public/index.html
 RUN mkdir -p pb_public/vendor \
  && wget -q "https://cdn.jsdelivr.net/npm/pocketbase@${PB_SDK_VERSION}/dist/pocketbase.umd.js" -O pb_public/vendor/pocketbase.umd.js \
  && wget -q "https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@${INTER_VERSION}/files/inter-latin-wght-normal.woff2" -O pb_public/vendor/inter.woff2
