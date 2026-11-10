@@ -88,6 +88,7 @@ function dailyAll(app) {
   eachUser(app, (u) => {
     networth.snapshot(app, u.id);
     notify.billReminders(app, u);
+    try { require(`${__hooks}/lib/forecast.js`).lowBalanceAlert(app, u); } catch (err) { app.logger().error("cash forecast alert", "error", util.errMsg(err)); }
   });
 }
 

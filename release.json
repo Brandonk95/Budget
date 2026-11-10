@@ -1,5 +1,5 @@
 {
-  "version": "2.9.0",
+  "version": "2.10.0",
   "released": "2026-11-10",
-  "motd": "Goals can now follow an account. Link a goal to your savings account and set the balance you want to reach. Keel tracks it on its own and shows how much to add each day, your actual pace, when you'll get there, and a chart of the path to your target."
+  "motd": "New Cash flow page: see where your checking balance is headed over the next 30 to 90 days, with bills and paychecks on their dates plus your usual everyday spending. Set a warning level and Keel can email you when your balance is headed below it."
 }

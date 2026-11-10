@@ -253,6 +253,13 @@ routerAdd("POST", "/api/budget/recurring/detect", (e) => {
   return e.json(200, recurring.detect(e.app, e.auth.id));
 }, $apis.requireAuth("users"));
 
+routerAdd("GET", "/api/budget/forecast", (e) => {
+  const forecast = require(`${__hooks}/lib/forecast.js`);
+  const q = e.request.url.query();
+  const accounts = (q.get("accounts") || "").split(",").filter(Boolean);
+  return e.json(200, forecast.forecast(e.app, e.auth.id, { days: parseInt(q.get("days"), 10) || 45, accounts }));
+}, $apis.requireAuth("users"));
+
 routerAdd("GET", "/api/budget/goals", (e) => {
   const goals = require(`${__hooks}/lib/goals.js`);
   return e.json(200, goals.list(e.app, e.auth.id));

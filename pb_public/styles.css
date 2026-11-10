@@ -676,3 +676,27 @@ tfoot td { border-top: 1px solid var(--border-strong); border-bottom: 0; padding
 .g-track i.neg { background: var(--s8); }
 @media (max-width: 760px) { .g-stats { grid-template-columns: 1fr 1fr; } .g-big { font-size: 26px; } }
 .h-stats.g-stats .h-stat:last-child { grid-column: auto; }
+
+/* ---------- cash flow ---------- */
+.cf-marks { position: relative; height: 12px; margin-top: -4px; }
+.cf-marks i { position: absolute; top: 2px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; cursor: default; }
+.cf-marks i.in, .legend .mk-in::before { background: var(--s3); }
+.cf-marks i.out, .legend .mk-out::before { background: var(--s2); }
+.legend .mk-in::before, .legend .mk-out::before { border-radius: 50%; width: 8px; height: 8px; }
+.cf-day { display: flex; gap: 14px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.cf-day:last-child { border-bottom: 0; }
+.cf-date { width: 54px; flex: none; display: flex; flex-direction: column; font-size: 13px; line-height: 1.3; }
+.cf-date span { color: var(--muted); }
+.cf-ev { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 1px 0; }
+.cf-bal { width: 96px; flex: none; text-align: right; font-size: 13px; padding-top: 1px; }
+.cf-acc .menu-pop .check { display: flex; gap: 8px; align-items: center; }
+.cf-cols { align-items: start; }
+.cf-bl { display: none; }
+.cf-warn { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
+@media (max-width: 520px) {
+  .cf-day { flex-wrap: wrap; gap: 4px 12px; }
+  .cf-date { width: 44px; }
+  .cf-day .grow { flex: 1 1 0; min-width: 0; }
+  .cf-bal { width: auto; flex: 1 1 100%; padding-left: 56px; font-size: 12px; }
+  .cf-bl { display: inline; }
+}

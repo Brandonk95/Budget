@@ -499,4 +499,27 @@ function history(app, userId, id) {
   return out;
 }
 
-module.exports = { detect, list, subscriptions, history, normalizePayee, occurrences, PER_MONTH };
+// Active bills, subscriptions and paychecks still expected between [from, to]: occurrences
+// already matched to a transaction are left out, and lapsed subscriptions aren't counted.
+function expected(app, userId, from, to) {
+  const today = todayDay();
+  const recs = app.findRecordsByFilter("recurring", "user = {:u} && status = 'active'", "name", 0, 0, { u: userId });
+  const items = recs.map(toPlain);
+  const txIndex = {};
+  for (const t of loadTx(app, userId, msDay(dayMs(from) - 60 * DAY))) {
+    const k = normalizePayee(t.payee || t.description) + "|" + (t.amount > 0 ? "in" : "out");
+    (txIndex[k] = txIndex[k] || []).push(t);
+  }
+  reviewSubscriptions(app, recs, items, txIndex, today);
+  const out = [];
+  for (const it of items) {
+    if (it.status !== "active" || it.possibly_cancelled) continue;
+    for (const d of occurrences(it, from, to)) {
+      if (it.merchant_key && matchPaid(d, it, txIndex)) continue;
+      out.push({ date: d, id: it.id, name: it.name, amount: it.amount, kind: it.kind, account: it.account, frequency: it.frequency });
+    }
+  }
+  return { events: out.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0)), items, txIndex };
+}
+
+module.exports = { detect, list, subscriptions, history, expected, normalizePayee, occurrences, PER_MONTH };

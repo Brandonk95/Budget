@@ -75,6 +75,7 @@
     recurring: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     subscriptions: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
     transactions: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    cashflow: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
     networth: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
     accounts: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
     goals: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -239,6 +240,7 @@
     spending: { title: "Spending", render: renderSpending, month: true, main: true },
     recurring: { title: "Recurring", render: renderRecurring, month: true },
     subscriptions: { title: "Recurring", hidden: true, render: () => { recState.tab = "subscriptions"; history.replaceState(null, "", "#/recurring"); return route(); } },
+    cashflow: { title: "Cash flow", render: renderCashflow },
     networth: { title: "Net worth", render: renderNetWorth },
     accounts: { title: "Accounts", render: renderAccounts },
     goals: { title: "Goals", render: renderGoals },
@@ -558,12 +560,13 @@
   // ------------------------------------------------------------------ dashboard
   async function renderDashboard(view) {
     const b = monthBounds(state.month);
-    const [d, rec, nw, recent, goals] = await Promise.all([
+    const [d, rec, nw, recent, goals, cf] = await Promise.all([
       api("/api/budget/insights", { query: { month: state.month } }),
       api("/api/budget/recurring", { query: { month: state.month } }),
       api("/api/budget/networth", { query: { days: 30 } }),
       pb.collection("transactions").getList(1, 7, { sort: "-date,-created", filter: pb.filter("date < {:e}", { e: b.end }) }),
       api("/api/budget/goals").then((x) => x.goals.filter((g) => g.status !== "done").slice(0, 4)),
+      api("/api/budget/forecast", { query: { days: 30, accounts: cfAccountsParam() } }).catch(() => null),
       loadCategories(), loadAccounts(),
     ]);
     const today = d.daily.today;
@@ -640,6 +643,13 @@
             ${recent.items.length ? recent.items.map(txLine).join("") : `<div class="empty">No transactions yet. <a href="#/accounts">Connect a bank</a> or import a CSV.</div>`}
           </div>
           <div class="stack">
+            ${cf && !cf.empty ? `<div class="card">
+              <div class="card-h"><h2>Cash flow</h2><div class="spacer"></div><a href="#/cashflow" class="small">Forecast →</a></div>
+              <div class="row" style="align-items:flex-end"><div><div class="label">Lowest in the next 30 days</div><div class="big num ${cf.below_floor_day ? "negc" : ""}">${money(cf.low.balance)}</div>
+                <div class="small muted">${cf.low.day === cf.today ? "Today" : esc(prettyDate(cf.low.day))}${cf.next_income ? ` · next deposit ${esc(prettyDate(cf.next_income.day))}` : ""}</div></div>
+                <div class="spacer"></div>${sparkline(cf.points.filter((p, i) => i % 2 === 0).map((p) => p.balance))}</div>
+              ${cf.below_floor_day ? `<div class="callout small cf-warn" style="margin-top:10px">Checking may drop below ${money(cf.floor)} around ${esc(prettyDate(cf.below_floor_day))}.</div>` : ""}
+            </div>` : ""}
             <div class="card">
               <div class="card-h"><h2>Net worth</h2><div class="spacer"></div><a href="#/networth" class="small">Details →</a></div>
               <div class="big num">${money(nw.net)}</div>
@@ -1732,6 +1742,118 @@
     });
   }
 
+  // ------------------------------------------------------------------ cash flow
+  // Day-by-day projection of checking: recurring bills and paychecks on their dates plus usual everyday spending.
+  const cfState = { days: 45 };
+  const cfAccounts = () => { try { return JSON.parse(localStorage.getItem("keel.cf.accounts") || "null"); } catch (_) { return null; } };
+  const cfAccountsParam = () => (cfAccounts() || []).join(",");
+  const weekday = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
+
+  async function renderCashflow(view) {
+    const f = await api("/api/budget/forecast", { query: { days: cfState.days, accounts: cfAccountsParam() } });
+    const me = pb.authStore.record;
+    const picker = `<details class="menu cf-acc"><summary class="btn sm">${f.accounts.length ? esc(f.accounts.length === 1 ? acctLabel(f.accounts[0]) : `${f.accounts.length} accounts`) : "Choose accounts"} ▾</summary>
+      <div class="menu-pop stack" style="gap:6px;min-width:250px">${f.choices.map((a) => `<label class="check"><input type="checkbox" value="${a.id}" ${a.selected ? "checked" : ""}> <span class="grow">${esc(acctLabel(a))}</span> <span class="num muted small">${money(a.balance)}</span></label>`).join("")}
+        <div class="row"><button type="button" class="btn sm" id="cf-reset">Checking only</button><div class="spacer"></div><button type="button" class="btn sm primary" id="cf-apply">Apply</button></div></div></details>`;
+    const head = `<div class="row" style="flex-wrap:wrap;gap:10px"><p class="muted" style="margin:0;flex:1 1 320px">Where your balance is headed, day by day: bills and paychecks on their dates plus your usual everyday spending.</p>
+      ${picker}<div class="seg">${[[30, "30 days"], [45, "45 days"], [90, "90 days"]].map(([dd, l]) => `<button data-days="${dd}" class="${cfState.days === dd ? "on" : ""}">${l}</button>`).join("")}</div></div>`;
+    if (f.empty) {
+      view.innerHTML = `<div class="stack">${head}<div class="card empty">Pick at least one checking or cash account to forecast. <a href="#/accounts">Accounts</a></div></div>`;
+      return bindCashflow(view);
+    }
+    const pts = f.points;
+    const change = f.end_balance - f.start;
+    const lowWhen = f.low.day === f.today ? "today" : `${weekday(f.low.day)} ${prettyDate(f.low.day)}`;
+    let callout = "";
+    if (f.below_floor_day) {
+      const p = pts.find((x) => x.day === f.below_floor_day);
+      callout = `<div class="callout cf-warn">Your balance is projected to drop to <b>${money(p.balance)}</b> around <b>${esc(prettyDate(f.below_floor_day))}</b>, below your ${money(f.floor)} warning level${f.next_income && f.next_income.day > f.below_floor_day ? `, before your next deposit on ${esc(prettyDate(f.next_income.day))}` : ""}.</div>`;
+    } else if (f.low.balance < 0) {
+      callout = `<div class="callout cf-warn">Your balance is projected to go negative around <b>${esc(prettyDate(pts.find((x) => x.balance < 0).day))}</b>.</div>`;
+    } else if (!f.has_income) {
+      callout = `<div class="callout small">No regular paycheck was found, so deposits that aren't recurring are averaged in as about ${money(f.other_in_per_day)} a day. <a href="#/recurring">Add your paycheck</a> for a sharper forecast.</div>`;
+    }
+    const refs = [];
+    if (f.floor > 0) refs.push({ v: f.floor, label: `Warning ${compact(f.floor)}` });
+    if (f.low.balance < 0) refs.push({ v: 0, label: "$0" });
+    const chart = lineChart({
+      series: [{ values: pts.map((p) => p.balance), color: "var(--s1)", area: true }],
+      n: pts.length, height: 240, yMinZero: false,
+      xLabel: (i) => (i === 0 ? "Today" : prettyDate(pts[i].day)),
+      ariaLabel: `Projected balance over the next ${f.days} days`,
+      refs,
+      tipFor: (i) => {
+        const p = pts[i];
+        return `<b>${i === 0 ? "Today" : esc(`${weekday(p.day)} ${prettyDate(p.day)}`)}</b><br>${money(p.balance)}${p.events.map((e) => `<br><span class="${e.amount > 0 ? "pos" : ""}">${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}</span> ${esc(e.name)}`).join("")}`;
+      },
+    });
+    // event days marked under the chart: paydays and bills
+    const marks = pts.map((p, i) => p.events.length ? `<i class="${p.events.some((e) => e.amount > 0) ? "in" : "out"}" style="left:${((52 + (i / (pts.length - 1)) * 574) / 640 * 100).toFixed(2)}%" ${tipAttr(`<b>${esc(prettyDate(p.day))}</b>${p.events.map((e) => `<br>${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))} ${esc(e.name)}`).join("")}`)}></i>` : "").join("");
+    const rows = pts.filter((p) => p.events.length).map((p) => `
+      <div class="cf-day"><div class="cf-date"><b>${esc(weekday(p.day))}</b><span>${esc(prettyDate(p.day))}</span></div>
+        <div class="grow">${p.events.map((e) => `<div class="cf-ev"><span>${esc(e.name)}${e.late ? ' <span class="pill warn-p">Not posted yet</span>' : ""}</span><span class="spacer"></span><span class="num ${e.amount > 0 ? "pos" : ""}">${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}</span></div>`).join("")}</div>
+        <div class="cf-bal num ${p.balance < f.floor || p.balance < 0 ? "negc" : "muted"}" ${tipAttr("Projected balance at the end of the day")}><span class="cf-bl">Balance </span>${money(p.balance)}</div></div>`).join("");
+    view.innerHTML = `
+      <div class="stack">
+        ${head}
+        <div class="grid kpis">
+          <div class="card kpi"><div class="label">Balance now</div><div class="value num">${money(f.start)}</div><div class="sub">${esc(f.accounts.map(acctLabel).join(", "))}</div></div>
+          <div class="card kpi"><div class="label">Lowest point</div><div class="value num ${f.below_floor_day || f.low.balance < 0 ? "negc" : ""}">${money(f.low.balance)}</div><div class="sub">${esc(cap(lowWhen))}${f.before_payday && f.before_payday.day !== f.low.day && f.next_income ? `<br>${money(f.before_payday.balance)} before your ${esc(prettyDate(f.next_income.day))} deposit` : ""}</div></div>
+          <div class="card kpi"><div class="label">In ${f.days} days</div><div class="value num">${money(f.end_balance)}</div><div class="sub">${change === 0 ? "No change" : signed(change)} from today</div></div>
+        </div>
+        ${callout}
+        <div class="card">
+          <div class="card-h"><h2>Projected balance</h2><div class="spacer"></div><div class="legend" style="margin:0"><span class="mk-in">Deposit</span><span class="mk-out">Bill</span></div></div>
+          ${chart}
+          <div class="cf-marks" aria-hidden="true">${marks}</div>
+        </div>
+        <div class="grid two cf-cols">
+          <div class="card">
+            <div class="card-h"><h2>Coming up</h2><div class="spacer"></div><span class="small muted">+${money(f.income_total)} in · −${money(f.bills_total)} bills</span></div>
+            ${rows || `<div class="muted small">No bills or paychecks expected in this window.</div>`}
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="card-h"><h2>How it's worked out</h2></div>
+              <div class="m-row"><span>Balance now</span><span class="num">${money(f.start)}</span></div>
+              <div class="m-row"><span>Paychecks and deposits</span><span class="num pos">+${money(f.income_total)}</span></div>
+              <div class="m-row"><span>Bills and subscriptions</span><span class="num">−${money(f.bills_total)}</span></div>
+              <div class="m-row"><span>Everyday spending <span class="muted small">about ${money(f.spend_per_day)}/day</span></span><span class="num">−${money(f.spend_total)}</span></div>
+              ${f.other_in_per_day ? `<div class="m-row"><span>Other deposits <span class="muted small">about ${money(f.other_in_per_day)}/day</span></span><span class="num pos">+${money(f.other_in_per_day * f.days)}</span></div>` : ""}
+              <div class="m-row total"><span>In ${f.days} days</span><span class="num">${money(f.end_balance)}</span></div>
+              <p class="small muted" style="margin:10px 0 0">Everyday spending is what usually leaves these accounts outside your recurring bills (card payments and transfers out included), averaged over the last ${plural(f.lookback_days, "day")}. Bills charged to a credit card are left out, since they're paid through the card payment.</p>
+            </div>
+            <div class="card">
+              <div class="card-h"><h2>Low balance warning</h2></div>
+              <form id="cf-floor" class="stack">
+                <label class="field"><span>Warn me if it's projected below ($)</span><input name="floor" type="number" min="0" step="1" value="${f.floor || 0}"></label>
+                <label class="check"><input type="checkbox" name="alerts" ${me.cash_alerts ? "checked" : ""} ${state.status.smtp ? "" : "disabled"}> Email me when that's coming up in the next 2 weeks${state.status.smtp ? "" : " (needs SMTP)"}</label>
+                <div><button class="btn primary sm">Save</button></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    bindCashflow(view);
+    $("#cf-floor").onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        const saved = await pb.collection("users").update(me.id, { cash_floor: Number(fd.get("floor")) || 0, cash_alerts: fd.has("alerts") });
+        pb.authStore.save(pb.authStore.token, saved);
+        toast("Warning saved"); route();
+      } catch (err) { fail(err); }
+    };
+  }
+  function bindCashflow(view) {
+    $$(".seg button", view).forEach((b) => (b.onclick = () => { cfState.days = +b.dataset.days; route(); }));
+    const save = (ids) => { try { if (ids) localStorage.setItem("keel.cf.accounts", JSON.stringify(ids)); else localStorage.removeItem("keel.cf.accounts"); } catch (_) {} route(); };
+    const apply = $("#cf-apply", view);
+    if (apply) apply.onclick = () => save($$(".cf-acc input:checked", view).map((x) => x.value));
+    const reset = $("#cf-reset", view);
+    if (reset) reset.onclick = () => save(null);
+  }
+
   // ------------------------------------------------------------------ goals
   // Goal numbers come from /api/budget/goals: a linked goal follows its account's balance.
   const GOAL_STATUS = { done: ["ok", "Reached"], on_track: ["ok", "On track"], behind: ["warn-p", "Behind"], overdue: ["err", "Past due"], no_date: ["", "No deadline"] };
@@ -1970,6 +2092,7 @@
               </div>
               <label class="check"><input type="checkbox" name="weekly_digest" ${me.weekly_digest ? "checked" : ""}> Weekly summary email</label>
               <label class="check"><input type="checkbox" name="bill_reminders" ${me.bill_reminders ? "checked" : ""}> Email me 3 days before a bill or subscription is due</label>
+              <label class="check"><input type="checkbox" name="cash_alerts" ${me.cash_alerts ? "checked" : ""}> Email me when checking is projected to drop below <a href="#/cashflow">my warning level</a>${me.cash_floor ? ` (${money(me.cash_floor)})` : ""}</label>
               <label class="check"><input type="checkbox" name="update_notes" ${me.update_notes ? "checked" : ""}> Show what's new when Keel updates (top-right popup)</label>
               <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="digest-now" ${state.status.smtp ? "" : "disabled"}>Send me a summary now</button></div>
             </form>
@@ -1996,7 +2119,7 @@
       const fd = new FormData(e.target);
       try {
         const saved = await pb.collection("users").update(me.id, {
-          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"), bill_reminders: fd.has("bill_reminders"),
+          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"), bill_reminders: fd.has("bill_reminders"), cash_alerts: fd.has("cash_alerts"),
           alert_threshold: Number(fd.get("alert_threshold")) || 90, large_txn_threshold: Number(fd.get("large_txn_threshold")) || 0,
         });
         pb.authStore.save(pb.authStore.token, saved);
