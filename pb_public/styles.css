@@ -342,7 +342,7 @@ label.field > span { display: block; font-size: 13px; font-weight: 500; color: v
 .chart .lbl { fill: var(--text); font-size: 11px; font-weight: 600; }
 .chart .hit { fill: transparent; }
 .chart .ref, .lp-chart .ref { stroke: var(--subtle); stroke-width: 1; stroke-dasharray: 2 4; }
-.chart .ref-l { fill: var(--muted); font-weight: 500; }
+.chart .ref-l { fill: var(--muted); font-weight: 500; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .chart .xh { stroke: var(--subtle); stroke-width: 1; opacity: 0; pointer-events: none; }
 .chart .xh-dot { opacity: 0; pointer-events: none; }
 .chart svg.hovering .xh, .chart svg.hovering .xh-dot { opacity: 1; }

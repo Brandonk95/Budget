@@ -502,7 +502,18 @@
     for (const t of sc.ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${compact(t)}</text>`;
     const xt = n <= 1 ? [0] : [0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round(((n - 1) * 3) / 4), n - 1];
     for (const i of [...new Set(xt)]) g += `<text class="ax" x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}">${esc(xLabel(i))}</text>`;
-    for (const r of refs) g += `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(r.v)}" y2="${y(r.v)}"/><text class="ax ref-l" x="${W - R}" y="${y(r.v) - 5}" text-anchor="end">${esc(r.label)}</text>`;
+    // a reference label goes at the first corner of its line (right/left, above/below) the data doesn't run through
+    const pts = series.flatMap((s) => s.values.map((v, i) => (v == null ? null : [x(i), y(Math.min(v, sc.max))])).filter(Boolean));
+    for (const r of refs) {
+      const ry = y(r.v), w = r.label.length * 6.2 + 6;
+      const spots = [[W - R, ry - 5, "end"], [W - R, ry + 13, "end"], [L + 4, ry - 5, "start"], [L + 4, ry + 13, "start"]];
+      const free = ([lx, ly, a]) => {
+        const x0 = a === "end" ? lx - w : lx, x1 = a === "end" ? lx : lx + w;
+        return !pts.some(([px, py]) => px >= x0 - 4 && px <= x1 + 4 && py >= ly - 13 && py <= ly + 4);
+      };
+      const [lx, ly, a] = spots.find(free) || spots[0];
+      g += `<line class="ref" x1="${L}" x2="${W - R}" y1="${ry}" y2="${ry}"/><text class="ax ref-l" x="${lx}" y="${ly}" text-anchor="${a}">${esc(r.label)}</text>`;
+    }
     let paths = "";
     series.forEach((s, si) => {
       const pts = s.values.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
