@@ -218,7 +218,7 @@ main { padding: 32px 32px 96px; max-width: 1200px; width: 100%; min-width: 0; }
 .kpi .value { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .kpi .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
 .big { font-size: 34px; font-weight: 700; letter-spacing: -.025em; margin: 4px 0; font-variant-numeric: tabular-nums; line-height: 1.15; }
-a.card, .card.click { cursor: pointer; color: inherit; transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease), transform var(--t) var(--ease); }
+a.card, .card.click { display: block; text-decoration: none; cursor: pointer; color: inherit; transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease), transform var(--t) var(--ease); }
 a.card:hover, .card.click:hover, .goal[data-id]:hover { border-color: var(--border-strong); box-shadow: var(--shadow-hover); }
 a.card:active, .card.click:active, .goal[data-id]:active { transform: translateY(1px); }
 .card.click:focus-visible, a.card:focus-visible, .goal[data-id]:focus-visible { box-shadow: var(--focus); border-radius: var(--radius); }
