@@ -253,6 +253,16 @@ routerAdd("POST", "/api/budget/recurring/detect", (e) => {
   return e.json(200, recurring.detect(e.app, e.auth.id));
 }, $apis.requireAuth("users"));
 
+routerAdd("GET", "/api/budget/goals", (e) => {
+  const goals = require(`${__hooks}/lib/goals.js`);
+  return e.json(200, goals.list(e.app, e.auth.id));
+}, $apis.requireAuth("users"));
+
+routerAdd("GET", "/api/budget/goals/{id}", (e) => {
+  const goals = require(`${__hooks}/lib/goals.js`);
+  return e.json(200, goals.detail(e.app, e.auth.id, e.request.pathValue("id")));
+}, $apis.requireAuth("users"));
+
 routerAdd("GET", "/api/budget/networth", (e) => {
   const networth = require(`${__hooks}/lib/networth.js`);
   const days = parseInt(e.request.url.query().get("days"), 10) || 90;

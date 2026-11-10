@@ -11,7 +11,7 @@
 - **Overview**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
 - **Insights**: month-end projections, a 50/30/20 check and plain-language tips.
 - **Auto-categorization** that learns: your own rules ("contains *kroger* → Groceries") come first, then the categories you have picked by hand for each merchant, then a built-in directory of hundreds of merchants (groceries, gas, streaming, airlines, utilities, pet stores and more). It reads messy bank text like "PURCHASE AUTHORIZED ON 11/02 SQ *BLUE BOTTLE #123". Change one transaction's category and Keel files that merchant's other uncategorized and future transactions the same way.
-- **Goals** with the monthly amount needed to hit each target date.
+- **Goals** that can follow an account balance ("have $10,000 in Savings by June"): what to add per day, week and month, your actual pace, a projected finish date, and a chart of the path to the target. Account balances are recorded daily.
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
 - **Installable app** for phones and desktops: home-screen icon, full-screen window, opens offline.
 - **Calm, accessible design**: Keel Blue on cool neutrals, the Inter typeface, Lucide icons, a dark mode of its own, a phone layout with a bottom bar, and reduced-motion support.

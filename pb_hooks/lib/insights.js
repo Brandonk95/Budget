@@ -239,18 +239,9 @@ function compute(app, userId, monthKey) {
   };
 }
 
-// What to set aside each month to hit every dated goal on time.
+// What to set aside each month to hit every dated goal on time (linked goals use the account balance).
 function goalsMonthly(app, userId) {
-  const now = new Date();
-  let total = 0;
-  for (const g of app.findRecordsByFilter("goals", "user = {:u}", "", 0, 0, { u: userId })) {
-    const left = g.getFloat("target") - g.getFloat("saved");
-    const td = g.getString("target_date");
-    if (left <= 0 || !td) continue;
-    const months = Math.max(1, (parseInt(td.slice(0, 4), 10) - now.getFullYear()) * 12 + (parseInt(td.slice(5, 7), 10) - 1 - now.getMonth()));
-    total += left / months;
-  }
-  return total;
+  try { return require(`${__hooks}/lib/goals.js`).monthlyNeed(app, userId); } catch (_) { return 0; }
 }
 
 module.exports = { compute };

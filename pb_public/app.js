@@ -563,7 +563,7 @@
       api("/api/budget/recurring", { query: { month: state.month } }),
       api("/api/budget/networth", { query: { days: 30 } }),
       pb.collection("transactions").getList(1, 7, { sort: "-date,-created", filter: pb.filter("date < {:e}", { e: b.end }) }),
-      pb.collection("goals").getFullList({ sort: "target_date" }),
+      api("/api/budget/goals").then((x) => x.goals.filter((g) => g.status !== "done").slice(0, 4)),
       loadCategories(), loadAccounts(),
     ]);
     const today = d.daily.today;
@@ -661,6 +661,7 @@
       </div>`;
     const byId = Object.fromEntries(recent.items.map((t) => [t.id, t]));
     $$(".tx-line", view).forEach((el) => (el.onclick = () => editTx(byId[el.dataset.id])));
+    bindGoalCards(view);
     bindInstallBanner(view);
   }
 
@@ -1732,55 +1733,185 @@
   }
 
   // ------------------------------------------------------------------ goals
-  function goalMath(g) {
-    const left = Math.max(0, (g.target || 0) - (g.saved || 0));
-    let monthly = null, months = null;
-    if (g.target_date && left > 0) {
-      const [y, m] = dateOnly(g.target_date).split("-").map(Number);
-      const now = new Date();
-      months = Math.max(1, (y - now.getFullYear()) * 12 + (m - 1 - now.getMonth()));
-      monthly = left / months;
-    }
-    return { left, monthly, months, pct: g.target ? Math.min(100, ((g.saved || 0) / g.target) * 100) : 0 };
+  // Goal numbers come from /api/budget/goals: a linked goal follows its account's balance.
+  const GOAL_STATUS = { done: ["ok", "Reached"], on_track: ["ok", "On track"], behind: ["warn-p", "Behind"], overdue: ["err", "Past due"], no_date: ["", "No deadline"] };
+  const GOAL_ACCOUNT_TYPES = { checking: 1, savings: 1, investment: 1, cash: 1, other: 1 };
+  const fullDate = (d) => `${prettyDate(d)} ${dateOnly(d).slice(0, 4)}`;
+  // 12 days, 5 months, 3.5 years
+  const span = (days) => days < 60 ? plural(days, "day") : days < 730 ? plural(Math.round(days / 30.44), "month") : `${Math.round(days / 182.6) / 2} years`;
+  const goalPill = (g) => { const [c, t] = GOAL_STATUS[g.status] || ["", ""]; return `<span class="pill ${c}">${t}</span>`; };
+  function goalLine(g) {
+    if (g.status === "done") return `Goal reached${g.linked ? ". Keep the balance at or above it." : "."}`;
+    if (g.status === "overdue") return `${money(g.left)} to go. The target date has passed.`;
+    if (g.per_day != null) return `Add <b class="num">${money(g.per_day)}</b>/day (${money(g.per_month)}/mo) to reach it by ${esc(fullDate(g.target_date))}`;
+    if (g.projected_date) return `${money(g.left)} to go. At your pace, done around ${esc(fullDate(g.projected_date))}.`;
+    return `${money(g.left)} to go`;
+  }
+  function sparkline(vals) {
+    if (!vals || vals.length < 2) return "";
+    const W = 96, H = 28, lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+    const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * (W - 4) + 2).toFixed(1)},${(H - 3 - ((v - lo) / span) * (H - 6)).toFixed(1)}`).join(" ");
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
   }
   function goalCard(g) {
-    const x = goalMath(g);
-    return `<div class="card goal" data-id="${g.id}">
-      <div class="row"><b class="cl">${catMark({ name: g.name, icon: "target" }, true)}<span>${esc(g.name)}</span></b><div class="spacer"></div><span class="num muted">${Math.round(x.pct)}%</span></div>
-      <div class="bar ${x.pct >= 100 ? "good" : ""}"><i style="width:${x.pct}%"></i></div>
-      <div class="small"><span class="num">${money(g.saved)}</span> <span class="muted">of ${money(g.target)}</span></div>
-      <div class="small muted" style="margin-top:4px">${x.left <= 0 ? "Goal reached" : x.monthly != null ? `Save ${money(x.monthly)}/mo to hit it by ${prettyDate(g.target_date)} ${dateOnly(g.target_date).slice(0, 4)}` : `${money(x.left)} to go`}</div>
+    const pct = Math.round(g.pct * 100);
+    return `<div class="card goal" data-id="${g.id}" role="button" tabindex="0" aria-label="${esc(g.name)} goal details">
+      <div class="row"><b class="cl">${catMark({ name: g.name, icon: "target" }, true)}<span>${esc(g.name)}</span></b><div class="spacer"></div>${goalPill(g)}</div>
+      <div class="small muted g-src">${g.linked ? `Tracks ${esc(acctLabel(g.account))}` : "Tracked by hand"}</div>
+      <div class="row g-amt"><div><span class="g-cur num">${money(g.current)}</span> <span class="muted small">of ${money(g.target)}</span></div><div class="spacer"></div>${sparkline(g.spark)}</div>
+      <div class="bar ${g.status === "done" ? "good" : ""}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+      <div class="small muted">${pct}% · ${goalLine(g)}</div>
     </div>`;
   }
+  const bindGoalCards = (root) => $$(".goal[data-id]", root).forEach((el) => {
+    el.onclick = () => openGoal(el.dataset.id);
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGoal(el.dataset.id); } };
+  });
 
   async function renderGoals(view) {
-    const goals = await pb.collection("goals").getFullList({ sort: "target_date" });
-    const monthlyNeed = goals.reduce((s, g) => s + (goalMath(g).monthly || 0), 0);
+    const [d] = await Promise.all([api("/api/budget/goals"), loadAccounts()]);
+    const goals = d.goals, t = d.totals;
+    const open = goals.filter((g) => g.status !== "done");
+    const onTrack = goals.filter((g) => g.status === "on_track").length;
+    const dated = goals.filter((g) => g.target_date && g.status !== "done").length;
     view.innerHTML = `
       <div class="stack">
-        <div class="row"><p class="muted" style="margin:0">${goals.length ? `To stay on schedule, set aside about <b class="num">${money(monthlyNeed)}</b>/month across your goals. Add that to a Savings category on the Budget page.` : "Set savings goals — an emergency fund, a trip, a down payment — and see what to save each month."}</p>
+        <div class="row"><p class="muted" style="margin:0">${goals.length ? `Link a goal to a savings account and Keel follows the balance for you.` : "Set savings goals (an emergency fund, a trip, a down payment) and see what to put away each day to get there."}</p>
           <div class="spacer"></div><button class="btn primary" id="add-goal">+ Goal</button></div>
-        ${goals.length ? `<div class="grid goals-grid">${goals.map((g) => goalCard(g).replace('class="card goal"', 'class="card goal" style="cursor:pointer"')).join("")}</div>` : `<div class="card empty">No goals yet.</div>`}
+        ${goals.length ? `<div class="grid kpis">
+          <div class="card kpi"><div class="label">Saved toward goals</div><div class="value num">${money(t.saved)}</div><div class="sub">of ${money(t.target)} · ${t.target ? Math.round((t.saved / t.target) * 100) : 0}%</div></div>
+          <div class="card kpi"><div class="label">Needed to stay on schedule</div><div class="value num">${money(t.per_month)}<span class="muted" style="font-size:14px;font-weight:500">/mo</span></div><div class="sub">${t.per_month ? `About ${money(t.per_month / 30.44)} a day` : "No dated goals left"}</div></div>
+          <div class="card kpi"><div class="label">On track</div><div class="value num">${dated ? `${onTrack} of ${dated}` : "—"}</div><div class="sub">${open.length ? `${plural(open.length, "goal")} in progress` : "Every goal reached"}</div></div>
+        </div>
+        <div class="grid goals-grid">${goals.map(goalCard).join("")}</div>` : `<div class="card empty">No goals yet.</div>`}
       </div>`;
-    const byId = Object.fromEntries(goals.map((g) => [g.id, g]));
-    $$(".goal", view).forEach((el) => (el.onclick = () => editGoal(byId[el.dataset.id])));
+    bindGoalCards(view);
     $("#add-goal").onclick = () => editGoal(null);
+  }
+
+  // Detail: where you are, what it takes per day, your actual pace, and the path to the target.
+  async function openGoal(id) {
+    let g;
+    try { g = await api(`/api/budget/goals/${id}`); } catch (err) { return fail(err); }
+    const pct = Math.round(g.pct * 100);
+    const stat = (label, v, sub) => `<div class="h-stat"><div class="label">${label}</div><div class="h-v num">${v}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
+    const paceSub = g.pace_per_day == null ? (g.linked ? "Not enough history yet" : "Shows after two weeks") : `${signed(g.pace_per_day * 30.44, true)}/mo over the last ${plural(g.pace_days, "day")}`;
+    let finish = "—", finishSub = g.status === "done" ? "Already there" : "Needs a positive pace";
+    if (g.projected_date) {
+      finish = esc(fullDate(g.projected_date));
+      if (g.target_date) {
+        const diff = Math.round((new Date(g.target_date + "T12:00:00") - new Date(g.projected_date + "T12:00:00")) / 86400000);
+        finishSub = diff >= 0 ? `${span(diff)} early` : `<span class="negc">${span(-diff)} late</span>`;
+      } else finishSub = "At your current pace";
+    } else if (g.status === "done") finish = "Done";
+    const need = g.status === "done" ? stat("Need per day", money(0), "You've reached it")
+      : g.per_day != null ? stat("Need per day", money(g.per_day), `${money(g.per_week)}/week · ${money(g.per_month)}/month`)
+      : stat("Need per day", "—", g.target_date ? "The target date has passed" : "Add a target date to see this");
+    const months = (g.months || []).filter((x) => x.change != null);
+    const mMax = Math.max(1, ...months.map((x) => Math.abs(x.change)));
+    modal(g.name, `
+      <div class="stack g-detail">
+        <div>
+          <div class="row" style="align-items:baseline;flex-wrap:wrap;gap:8px"><span class="g-big num">${money(g.current)}</span><span class="muted">of ${money(g.target)}${g.target_date ? ` by ${esc(fullDate(g.target_date))}` : ""}</span><div class="spacer"></div>${goalPill(g)}</div>
+          <div class="bar ${g.status === "done" ? "good" : ""}" style="margin:12px 0 6px"><i style="width:${pct}%"></i></div>
+          <div class="small muted">${pct}% · ${g.linked ? `Follows the balance of ${esc(acctLabel(g.account))}` : "Tracked by hand"}${g.since_start ? ` · ${signed(g.since_start, true)} since ${esc(fullDate(g.start_day))}` : ""}</div>
+        </div>
+        <div class="h-stats g-stats">
+          ${stat("Left to go", money(g.left))}
+          ${need}
+          ${stat("Your pace", g.pace_per_day == null ? "—" : `${g.pace_per_day < 0 ? "−" : ""}${money(Math.abs(g.pace_per_day))}<span class="muted" style="font-size:13px;font-weight:500">/day</span>`, paceSub)}
+          ${stat("Projected finish", finish, finishSub)}
+        </div>
+        ${g.linked && g.history && g.history.length > 1 ? `<div><div class="kind-h">Balance and the path to your target</div><div id="g-chart"></div></div>` : ""}
+        ${months.length ? `<div><div class="kind-h row"><span>Added each month</span><div class="spacer"></div><span class="small muted">Net change in the account</span></div>
+          <div class="g-months">${months.map((x) => `<div class="g-month" ${tipAttr(`<b>${esc(monthLabel(x.month))}</b><br>${x.change >= 0 ? "Added" : "Took out"} ${money(Math.abs(x.change))}`)}><span class="small muted">${esc(shortMonth(x.month))}</span><div class="g-track"><i class="${x.change < 0 ? "neg" : ""}" style="width:${Math.max(x.change ? 2 : 0, (Math.abs(x.change) / mMax) * 100)}%"></i></div><span class="num small ${x.change < 0 ? "negc" : x.change ? "" : "muted"}">${x.change ? `${x.change < 0 ? "−" : "+"}${money(Math.abs(x.change))}` : "No change"}</span></div>`).join("")}</div></div>` : ""}
+        ${!g.linked && g.status !== "done" ? `<form class="row" id="g-add"><input type="number" step="0.01" name="amt" placeholder="Amount" aria-label="Amount to add" style="max-width:160px" required><button class="btn">Add money</button><span class="small muted">Or link this goal to an account to track it automatically.</span></form>` : ""}
+        <div class="actions"><button type="button" class="btn" id="g-edit">Edit goal</button><div class="spacer"></div><button type="button" class="btn primary" data-close>Done</button></div>
+      </div>`, {
+      wide: true,
+      onMount: (m, close) => {
+        $("#g-edit", m).onclick = async () => { close(); const rec = await pb.collection("goals").getOne(g.id); editGoal(rec); };
+        const add = $("#g-add", m);
+        if (add) add.onsubmit = async (e) => {
+          e.preventDefault();
+          const v = Number(new FormData(add).get("amt")) || 0;
+          try { await pb.collection("goals").update(g.id, { saved: Math.round((g.saved + v) * 100) / 100 }); close(); await route(); openGoal(g.id); } catch (err) { fail(err); }
+        };
+        const box = $("#g-chart", m);
+        if (box) box.innerHTML = goalChart(g);
+      },
+    });
+  }
+
+  // Balance so far, then two lines into the future: what's needed to land on the target date,
+  // and where your current pace goes. Long spans are drawn weekly.
+  function goalChart(g) {
+    const DAYMS = 86400000;
+    const ms = (d) => new Date(d + "T12:00:00").getTime();
+    const hist = g.history;
+    const today = hist[hist.length - 1].day;
+    const first = Math.max(ms(hist[0].day), Math.min(ms(g.start_day) - 30 * DAYMS, ms(today) - 90 * DAYMS));
+    let end = ms(today);
+    if (g.target_date && ms(g.target_date) > end) end = ms(g.target_date);
+    else if (g.projected_date) end = Math.min(ms(g.projected_date), ms(today) + 730 * DAYMS);
+    end = Math.max(end, ms(today) + 14 * DAYMS);
+    const total = Math.round((end - first) / DAYMS);
+    const step = total > 400 ? 14 : total > 180 ? 7 : 1;
+    // walk back from today so today always lands on a point
+    const days = [];
+    for (let t = ms(today); t >= first; t -= step * DAYMS) days.unshift(t);
+    for (let t = ms(today) + step * DAYMS; t <= end + (step - 1) * DAYMS; t += step * DAYMS) days.push(t);
+    const ti = days.indexOf(ms(today));
+    const byDay = Object.fromEntries(hist.map((p) => [p.day, p]));
+    const dayStr = (t) => { const d = new Date(t); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+    const actual = days.map((t, i) => (i <= ti ? (byDay[dayStr(t)] || {}).value ?? null : null));
+    const tEnd = g.target_date ? ms(g.target_date) : null;
+    const done = g.status === "done";
+    const needed = days.map((t, i) => (done || !tEnd || tEnd <= ms(today) || i < ti || t > tEnd + (step - 1) * DAYMS ? null : g.current + (g.target - g.current) * Math.min(1, (t - ms(today)) / (tEnd - ms(today)))));
+    const pace = days.map((t, i) => (done || g.pace_per_day == null || i < ti ? null : g.current + g.pace_per_day * ((t - ms(today)) / DAYMS)));
+    const series = [{ values: actual, color: "var(--s1)", area: true, endDot: true }];
+    if (needed.some((v) => v != null)) series.push({ values: needed, color: "var(--s3)", dashed: true });
+    if (pace.some((v) => v != null)) series.push({ values: pace, color: "var(--s2)", dashed: true });
+    const est = hist.some((p) => p.estimated);
+    const chart = lineChart({
+      series, n: days.length, height: 240, yMinZero: false,
+      yMax: Math.max(g.target, ...actual.filter((v) => v != null)) * 1.04,
+      refs: [{ v: g.target, label: `Target ${compact(g.target)}` }],
+      xLabel: (i) => { const d = dayStr(days[i]); return total > 300 ? `${shortMonth(d.slice(0, 7))} ’${d.slice(2, 4)}` : prettyDate(d); },
+      ariaLabel: `${g.name}: balance over time with the path to ${money(g.target)}`,
+      tipFor: (i) => {
+        const d = dayStr(days[i]);
+        let h = `<b>${esc(fullDate(d))}</b>`;
+        if (actual[i] != null) h += `<br>Balance ${money(actual[i])}${(byDay[d] || {}).estimated ? ' <span class="muted">(estimated)</span>' : ""}`;
+        if (i > ti && needed[i] != null) h += `<br>Needed ${money(needed[i])}`;
+        if (i > ti && pace[i] != null) h += `<br>At your pace ${money(pace[i])}`;
+        return h;
+      },
+    });
+    const legend = [`<span style="--c:var(--s1)">Balance</span>`];
+    if (series.some((s) => s.color === "var(--s3)")) legend.push(`<span class="dash" style="--c:var(--s3)">Needed to hit the date</span>`);
+    if (series.some((s) => s.color === "var(--s2)")) legend.push(`<span class="dash" style="--c:var(--s2)">At your pace</span>`);
+    return chart + `<div class="row" style="margin-top:4px;gap:12px;flex-wrap:wrap"><div class="legend" style="margin:0">${legend.join("")}</div>${est ? `<span class="small muted">Older balances are estimated from transactions.</span>` : ""}</div>`;
   }
 
   function editGoal(g) {
     const isNew = !g;
-    g = g || { name: "", target: "", saved: 0, target_date: "", icon: "🎯" };
+    g = g || { name: "", target: "", saved: 0, target_date: "", account: "" };
+    const accts = (state.accounts || []).filter((a) => !a.hidden && GOAL_ACCOUNT_TYPES[a.type || "other"]);
+    const savings = accts.find((a) => a.type === "savings");
+    const selAcct = isNew ? (savings ? savings.id : "") : g.account || "";
     modal(isNew ? "New goal" : "Edit goal", `
       <form id="goal-form" class="stack">
+        <label class="field"><span>Name</span><input name="name" required value="${esc(g.name)}" placeholder="Emergency fund"></label>
+        <label class="field"><span>Track with</span><select name="account">
+          ${accts.map((a) => `<option value="${a.id}" ${a.id === selAcct ? "selected" : ""}>${esc(acctLabel(a))} · ${money(a.balance)}</option>`).join("")}
+          <option value="" ${!selAcct ? "selected" : ""}>Track by hand</option>
+        </select><small class="muted" id="g-hint"></small></label>
         <div class="form-grid">
-          <label class="field"><span>Name</span><input name="name" required value="${esc(g.name)}" placeholder="Emergency fund"></label>
+          <label class="field"><span id="g-target-l">Target</span><input name="target" type="number" min="0" step="1" required value="${g.target}"></label>
+          <label class="field"><span>Target date <span class="muted">(optional)</span></span><input name="target_date" type="date" value="${dateOnly(g.target_date)}"></label>
         </div>
-        <div class="form-grid">
-          <label class="field"><span>Target</span><input name="target" type="number" min="0" step="1" required value="${g.target}"></label>
-          <label class="field"><span>Saved so far</span><input name="saved" type="number" min="0" step="0.01" value="${g.saved || 0}"></label>
-          <label class="field"><span>Target date</span><input name="target_date" type="date" value="${dateOnly(g.target_date)}"></label>
-        </div>
-        ${!isNew ? `<div class="row"><input id="contrib" type="number" step="0.01" placeholder="Amount" style="max-width:140px"><button type="button" class="btn" id="add-contrib">+ Add contribution</button></div>` : ""}
+        <label class="field" id="g-saved"><span>Saved so far</span><input name="saved" type="number" min="0" step="0.01" value="${g.saved || 0}"></label>
         <div class="actions">
           ${!isNew ? `<button type="button" class="btn danger" id="del">Delete</button><div class="spacer"></div>` : ""}
           <button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button>
@@ -1788,12 +1919,22 @@
       </form>`, {
       onMount: (m, close) => {
         const form = $("#goal-form", m);
-        const ac = $("#add-contrib", m);
-        if (ac) ac.onclick = () => { const v = Number($("#contrib", m).value) || 0; const s = $("[name=saved]", form); s.value = Math.round(((Number(s.value) || 0) + v) * 100) / 100; $("#contrib", m).value = ""; };
+        const sel = $("[name=account]", form);
+        const sync = () => {
+          const a = accts.find((x) => x.id === sel.value);
+          $("#g-saved", m).style.display = a ? "none" : "";
+          $("#g-target-l", m).textContent = a ? "Balance to reach" : "Target";
+          $("#g-hint", m).textContent = a ? `Progress is this account's balance (${money(a.balance)} now), updated every sync.` : "You add money to it yourself.";
+        };
+        sel.onchange = sync; sync();
         form.onsubmit = async (e) => {
           e.preventDefault();
           const fd = Object.fromEntries(new FormData(form));
-          const data = { name: fd.name, target: Number(fd.target) || 0, saved: Number(fd.saved) || 0, target_date: fd.target_date ? fd.target_date + " 12:00:00.000Z" : "" };
+          const a = accts.find((x) => x.id === fd.account);
+          const data = { name: fd.name, target: Number(fd.target) || 0, target_date: fd.target_date ? fd.target_date + " 12:00:00.000Z" : "", account: fd.account || "" };
+          if (!a) data.saved = Number(fd.saved) || 0;
+          // where it started, for "since you set this goal" (reset when what it tracks changes)
+          if (isNew || (g.account || "") !== data.account) { data.start_day = ymd(new Date()); data.start_amount = a ? a.balance : data.saved; }
           try {
             if (isNew) await pb.collection("goals").create({ ...data, user: pb.authStore.record.id });
             else await pb.collection("goals").update(g.id, data);

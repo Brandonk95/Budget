@@ -47,6 +47,7 @@ function snapshot(app, userId) {
   r.set("liabilities", c.liabilities);
   r.set("net", c.net);
   app.save(r);
+  try { require(`${__hooks}/lib/goals.js`).snapshotAccounts(app, userId); } catch (err) { app.logger().error("account snapshot", "error", String(err)); }
   return c;
 }
 

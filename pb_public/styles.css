@@ -657,3 +657,22 @@ tfoot td { border-top: 1px solid var(--border-strong); border-bottom: 0; padding
   .h-stats .h-stat:last-child { grid-column: 1 / -1; }
   .h-v { font-size: 18px; }
 }
+
+/* ---------- goals ---------- */
+.goal[data-id] { cursor: pointer; transition: border-color .15s; }
+.goal[data-id]:hover { border-color: var(--border-strong, var(--subtle)); }
+.goal .g-src { margin-top: 2px; }
+.goal .g-amt { margin-top: 10px; align-items: flex-end; }
+.goal .g-cur { font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+.goal .bar { margin: 8px 0 8px; }
+.spark { width: 96px; height: 28px; flex: none; }
+.g-big { font-size: 30px; font-weight: 650; letter-spacing: -.02em; }
+.g-stats { grid-template-columns: repeat(4, 1fr); }
+.g-months { display: grid; gap: 6px; }
+.g-month { display: grid; grid-template-columns: 40px 1fr 96px; gap: 10px; align-items: center; }
+.g-month .num { text-align: right; }
+.g-track { height: 10px; background: var(--track); border-radius: 99px; overflow: hidden; }
+.g-track i { display: block; height: 100%; background: var(--s1); border-radius: 99px; }
+.g-track i.neg { background: var(--s8); }
+@media (max-width: 760px) { .g-stats { grid-template-columns: 1fr 1fr; } .g-big { font-size: 26px; } }
+.h-stats.g-stats .h-stat:last-child { grid-column: auto; }
