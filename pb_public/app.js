@@ -847,7 +847,8 @@
     const sel = (name, map, v) => `<select name="${name}">${Object.keys(map).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${map[k]}</option>`).join("")}</select>`;
     modal(isNew ? (it.kind === "subscription" ? "Add subscription" : "Add recurring") : it.name, `
       <form id="rec-form" class="stack">
-        ${!isNew ? `<section id="rec-hist" class="rec-hist" aria-live="polite"><div class="muted small"><span class="loading-dots">Loading history</span></div></section>` : ""}
+        <div class="${isNew ? "" : "rec-cols"}">
+        <div class="rec-fields stack">
         <label class="field"><span>Name</span><input name="name" required value="${esc(it.name)}" list="common-subs" placeholder="e.g. Netflix, Rent, Electric"></label>
         <datalist id="common-subs">${COMMON_SUBS.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
         <div class="form-grid">
@@ -859,6 +860,9 @@
           <label class="field"><span>Next due</span><input name="next_date" type="date" value="${dateOnly(it.next_due || it.next_date)}"></label>
         </div>
         <label class="field"><span>Category</span><select name="category">${categoryOptions(it.category, { noneLabel: "None" })}</select></label>
+        </div>
+        ${!isNew ? `<section id="rec-hist" class="rec-hist" aria-live="polite"><div class="muted small"><span class="loading-dots">Loading history</span></div></section>` : ""}
+        </div>
         <div class="actions">
           ${!isNew ? (it.status === "active"
             ? `<button type="button" class="btn" id="r-cancel" title="You stopped this; keep it for reference">Mark cancelled</button><button type="button" class="btn" id="r-ignore" title="This isn't actually recurring">Not recurring</button>`
@@ -869,7 +873,7 @@
       onMount: (m, close) => {
         const form = $("#rec-form", m);
         if (!isNew) {
-          m.classList.add("mid");
+          m.classList.add("wide");
           api(`/api/budget/recurring/${it.id}/history`).then((h) => {
             const box = $("#rec-hist", m); if (!box) return;
             box.innerHTML = historyHtml(h, it);

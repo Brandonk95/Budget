@@ -631,7 +631,16 @@ tfoot td { border-top: 1px solid var(--border-strong); border-bottom: 0; padding
 }
 
 /* ---------- recurring charge history ---------- */
-.rec-hist { padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+/* details on the left, history and stats on the right */
+.rec-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 28px; align-items: start; }
+.rec-cols .rec-hist { border-left: 1px solid var(--border); padding-left: 28px; min-width: 0; }
+.rec-cols .h-stats { grid-template-columns: 1fr 1fr; }
+.rec-cols .h-stats .h-stat:last-child { grid-column: 1 / -1; }
+.rec-cols .h-list { max-height: 220px; }
+@media (max-width: 760px) {
+  .rec-cols { grid-template-columns: 1fr; gap: 20px; }
+  .rec-cols .rec-hist { order: -1; border-left: 0; padding-left: 0; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+}
 .h-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .h-stat { background: var(--surface-2); border-radius: var(--radius-md); padding: 12px 14px; min-width: 0; }
 .h-v { font-size: 20px; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; }
