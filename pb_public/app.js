@@ -720,20 +720,27 @@
       const tip = list.length ? `<b>${esc(dayLabel(month, d))}</b>` + list.map((c) => `<br>${c.paid ? "✓ " : ""}${esc(c.name)}: ${c.kind === "income" ? "+" : ""}${money(c.amount)}`).join("") : "";
       cells += `<div class="cal-c ${key === today ? "today" : ""} ${list.length ? "has" : ""}" ${tip ? tipAttr(tip) : ""}>
         <span class="cal-d">${d}</span>
-        ${list.length ? `<span class="cal-dots">${list.slice(0, 3).map((c) => `<i class="${c.kind === "income" ? "inc" : ""} ${c.paid ? "paid" : ""}"></i>`).join("")}</span>` : ""}
+        ${list.length ? `<span class="cal-dots">${list.slice(0, 3).map((c) => `<i class="${c.kind === "income" ? "inc" : ""} ${c.paid || c.lapsed ? "paid" : ""}"></i>`).join("")}</span>` : ""}
       </div>`;
     }
     const wd = Array.from({ length: 7 }, (_, i) => new Date(2023, 0, 1 + i).toLocaleDateString(undefined, { weekday: "narrow" }));
     return `<div class="cal">${wd.map((w) => `<div class="cal-h">${esc(w)}</div>`).join("")}${cells}</div>`;
   }
 
+  // a subscription that skipped a charge, or was cancelled automatically after skipping two
+  const lapsePill = (it) => it.possibly_cancelled
+    ? `<span class="pill warn-p" ${tipAttr(`No charge since it was due ${esc(prettyDate(it.missed_date))}. If the next one doesn't come either, Keel marks it cancelled.`)}>possibly cancelled</span>`
+    : it.status === "cancelled" && it.auto_cancelled ? `<span class="pill" ${tipAttr("Missed two charges in a row, so Keel marked it cancelled. It comes back on its own if it charges again.")}>auto-cancelled</span>` : "";
+
   function recRow(it) {
     const c = catById(it.category);
-    const sub = it.status === "active"
-      ? `${FREQ[it.frequency]}${it.next_due ? ` · next ${prettyDate(it.next_due)} (${dueText(it.days_until).toLowerCase()})` : ""}`
-      : `${it.status === "cancelled" ? "Cancelled" : "Not recurring"}${it.last_date ? ` · last ${prettyDate(it.last_date)}` : ""}`;
+    const sub = it.possibly_cancelled
+      ? `${FREQ[it.frequency]} · expected ${prettyDate(it.missed_date)}, no charge yet`
+      : it.status === "active"
+        ? `${FREQ[it.frequency]}${it.next_due ? ` · next ${prettyDate(it.next_due)} (${dueText(it.days_until).toLowerCase()})` : ""}`
+        : `${it.status === "cancelled" ? (it.auto_cancelled ? "Cancelled automatically" : "Cancelled") : "Not recurring"}${it.last_date ? ` · last ${prettyDate(it.last_date)}` : ""}`;
     return `<div class="tx-line click rec" data-id="${it.id}">${avatar(it.name, c)}
-      <div class="grow"><div class="t-name">${esc(it.name)}${it.source === "auto" && !it.edited ? ' <span class="pill">detected</span>' : ""}</div><div class="small muted">${sub}</div></div>
+      <div class="grow"><div class="t-name">${esc(it.name)}${it.source === "auto" && !it.edited && it.status === "active" && !it.possibly_cancelled ? ' <span class="pill">detected</span>' : ""} ${lapsePill(it)}</div><div class="small muted">${sub}</div></div>
       <div class="right"><div class="num ${it.kind === "income" ? "pos" : ""}">${it.kind === "income" ? "+" : ""}${money(it.amount)}</div>${it.frequency !== "monthly" ? `<div class="small muted">${money(it.monthly)}/mo</div>` : ""}</div></div>`;
   }
 
@@ -771,6 +778,7 @@
           <div class="card kpi"><div class="label">Still due ${isNow ? "this month" : "in " + esc(monthLabel(state.month))}</div><div class="value num">${money(t.remaining_this_month)}</div><div class="sub">${money(t.paid_this_month)} paid so far</div></div>
           <div class="card kpi"><div class="label">Recurring income</div><div class="value num">${incomeValue}</div><div class="sub">${incomeSub}</div></div>
         </div>
+        ${r.possibly_cancelled ? `<div class="callout small warn-c">${plural(r.possibly_cancelled, "subscription")} didn't charge when expected: ${r.items.filter((x) => x.possibly_cancelled).map((x) => `<b>${esc(x.name)}</b>`).join(", ")}. If you cancelled ${r.possibly_cancelled === 1 ? "it" : "them"}, Keel will mark ${r.possibly_cancelled === 1 ? "it" : "them"} cancelled after one more missed charge, or you can do it now.</div>` : ""}
         <div class="card">
           <div class="row" style="margin-bottom:14px">
             <div class="seg" role="tablist">
@@ -841,9 +849,13 @@
         };
         form.onsubmit = (e) => { e.preventDefault(); save({}); };
         const on = (id, fn) => { const b = $(id, m); if (b) b.onclick = fn; };
-        on("#r-cancel", () => save({ status: "cancelled" }));
+        on("#r-cancel", () => save({ status: "cancelled", auto_cancelled: false }));
         on("#r-ignore", () => save({ status: "ignored" }));
-        on("#r-active", () => save({ status: "active" }));
+        on("#r-active", () => {
+          const nd = $("[name=next_date]", form).value;
+          const today = ymd(new Date());
+          save({ status: "active", auto_cancelled: false, next_date: (nd && nd > today ? nd : today) + " 12:00:00.000Z" });
+        });
         on("#r-del", async () => { close(); if (await confirmBox(`Delete “${it.name}”?`)) { try { await pb.collection("recurring").delete(it.id); route(); } catch (err) { fail(err); } } });
       },
     });
@@ -870,7 +882,7 @@
       const c = catById(x.category);
       const pc = x.price_change;
       return `<tr class="click sub-row" data-id="${x.id}">
-        <td><div class="row" style="flex-wrap:nowrap">${avatar(x.name, c)}<div class="grow"><div class="t-name">${esc(x.name)}</div>
+        <td><div class="row" style="flex-wrap:nowrap">${avatar(x.name, c)}<div class="grow"><div class="t-name">${esc(x.name)} ${lapsePill(x)}</div>
           ${pc ? `<span class="pill ${pc.to > pc.from ? "err" : "ok"}" title="Changed on ${esc(prettyDate(pc.date))}">${pc.to > pc.from ? "▲" : "▼"}<span class="hide-sm"> price ${pc.to > pc.from ? "up" : "down"}</span> ${money(pc.from)} → ${money(pc.to)}</span>` : `<span class="small muted">${x.charges ? `${x.charges} charge${x.charges === 1 ? "" : "s"} found` : "added manually"}</span>`}</div></div></td>
         <td class="hide-sm"><span class="pill">${CYCLE[x.frequency]}</span></td>
         <td class="hide-sm">${renewCell(x)}</td>
@@ -905,7 +917,7 @@
         </div>
 
         ${cancelled.length ? `<div><div class="card-h"><h3>Cancelled</h3><div class="spacer"></div><span class="small muted">Saving ${money(t.cancelled_savings_yearly)} a year</span></div>
-          <div class="table-wrap"><table><tbody>${cancelled.map((x) => `<tr class="click sub-row" data-id="${x.id}"><td><div class="row" style="flex-wrap:nowrap">${avatar(x.name)}<div class="grow"><div class="t-name">${esc(x.name)}</div><div class="small muted">${CYCLE[x.frequency]} · ${money(x.amount)}${x.last_date ? ` · last charged ${prettyDate(x.last_date)}` : ""}</div></div></div></td><td class="right num pos">+${money(x.yearly)}<span class="muted small">/yr</span></td></tr>`).join("")}</tbody></table></div></div>` : ""}
+          <div class="table-wrap"><table><tbody>${cancelled.map((x) => `<tr class="click sub-row" data-id="${x.id}"><td><div class="row" style="flex-wrap:nowrap">${avatar(x.name)}<div class="grow"><div class="t-name">${esc(x.name)} ${lapsePill(x)}</div><div class="small muted">${CYCLE[x.frequency]} · ${money(x.amount)}${x.last_date ? ` · last charged ${prettyDate(x.last_date)}` : ""}</div></div></div></td><td class="right num pos">+${money(x.yearly)}<span class="muted small">/yr</span></td></tr>`).join("")}</tbody></table></div></div>` : ""}
         <p class="small muted">Keel can't cancel services for you. Cancel with the provider, then mark it cancelled here.</p>
       </div>`;
 

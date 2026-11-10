@@ -12,6 +12,8 @@ const FREQS = [
   { f: "yearly", min: 350, max: 380, need: 2 },
 ];
 const PER_MONTH = { weekly: 52 / 12, biweekly: 26 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12 };
+// days a charge may run late before it counts as missed
+const GRACE = { weekly: 3, biweekly: 4, monthly: 7, quarterly: 14, yearly: 21 };
 const STEP_DAYS = { weekly: 7, biweekly: 14, monthly: 30.4, quarterly: 91, yearly: 365 };
 const SUBS = /netflix|spotify|hulu|disney|youtube|apple|prime|hbo|max\b|patreon|adobe|microsoft|xbox|playstation|nintendo|google|dropbox|icloud|audible|peacock|paramount|sirius|crunchyroll|chatgpt|openai|anthropic|claude|github|new york times|nytimes|wsj|gym|fitness|planet fit|peloton|duolingo|headspace|calm|onlyfans|twitch|discord|nord|vpn|1password|lastpass/;
 
@@ -168,6 +170,10 @@ function detect(app, userId) {
     let r = existing[g];
     if (r) {
       if (r.getString("status") === "ignored") continue;
+      if (a.last_date > r.getString("last_date").slice(0, 10) && r.getString("status") === "cancelled" && r.getBool("auto_cancelled")) {
+        r.set("status", "active");
+        r.set("auto_cancelled", false);
+      }
       if (a.last_date > r.getString("last_date").slice(0, 10)) {
         r.set("last_date", a.last_date + " 12:00:00.000Z");
         r.set("last_amount", a.last_amount);
@@ -236,6 +242,7 @@ function toPlain(r) {
     last_amount: r.getFloat("last_amount"), kind: r.getString("kind"), frequency: r.getString("frequency"),
     next_date: r.getString("next_date"), last_date: r.getString("last_date"), category: r.getString("category"),
     account: r.getString("account"), status: r.getString("status"), source: r.getString("source"), edited: r.getBool("edited"),
+    auto_cancelled: r.getBool("auto_cancelled"),
   };
 }
 
@@ -246,6 +253,45 @@ function matchPaid(occDay, item, txIndex) {
     if (Math.abs(daysBetween(occDay, t.date.slice(0, 10))) <= 6) return t;
   }
   return null;
+}
+
+// Subscriptions that stop charging: one missed cycle -> "possibly cancelled" (shown, still counted);
+// a second missed cycle -> cancelled automatically. If a charge shows up again, it's active again.
+// The clock starts from the later of the last charge seen and the next due date the user set,
+// so "Track again" with a new due date isn't re-cancelled straight away.
+function reviewSubscriptions(app, recs, items, txIndex, today) {
+  const byId = {};
+  for (const r of recs) byId[r.id] = r;
+  for (const it of items) {
+    if (it.kind !== "subscription" || !it.merchant_key) continue;
+    const seen = (txIndex[it.merchant_key + "|out"] || []).map((t) => t.date.slice(0, 10)).sort();
+    let last = it.last_date ? it.last_date.slice(0, 10) : "";
+    if (seen.length && seen[seen.length - 1] > last) last = seen[seen.length - 1];
+    const r = byId[it.id];
+    if (it.status === "cancelled" && it.auto_cancelled) {
+      // it charged again after we gave up on it
+      if (it.last_date && last > it.last_date.slice(0, 10)) {
+        r.set("status", "active"); r.set("auto_cancelled", false);
+        r.set("last_date", last + " 12:00:00.000Z"); r.set("next_date", step(last, it.frequency, 1) + " 12:00:00.000Z");
+        try { app.save(r); it.status = "active"; it.auto_cancelled = false; it.last_date = r.getString("last_date"); it.next_date = r.getString("next_date"); } catch (_) { /* keep as is */ }
+      }
+      continue;
+    }
+    if (it.status !== "active" || !last) continue;
+    let due1 = step(last, it.frequency, 1);
+    const userNext = it.next_date ? it.next_date.slice(0, 10) : "";
+    if (userNext > due1) due1 = userNext;
+    const due2 = step(due1, it.frequency, 1);
+    const grace = GRACE[it.frequency] || 7;
+    if (daysBetween(due2, today) > grace) {
+      r.set("status", "cancelled");
+      r.set("auto_cancelled", true);
+      try { app.save(r); it.status = "cancelled"; it.auto_cancelled = true; } catch (_) { /* keep as is */ }
+    } else if (daysBetween(due1, today) > grace) {
+      it.possibly_cancelled = true;
+      it.missed_date = due1;
+    }
+  }
 }
 
 function list(app, userId, monthKey) {
@@ -269,6 +315,8 @@ function list(app, userId, monthKey) {
     (txIndex[k] = txIndex[k] || []).push(t);
   }
 
+  reviewSubscriptions(app, recs, items, txIndex, today);
+
   const calendar = [];
   const upcoming = [];
   const totals = { subscription: 0, bill: 0, income: 0 };
@@ -279,12 +327,14 @@ function list(app, userId, monthKey) {
     totals[it.kind] += it.monthly;
     for (const d of occurrences(it, monthStart, monthEnd)) {
       const paid = it.merchant_key ? matchPaid(d, it, txIndex) : null;
-      calendar.push({ date: d, id: it.id, name: it.name, amount: it.amount, kind: it.kind, paid: !!paid, paid_amount: paid ? Math.abs(paid.amount) : 0 });
-      if (it.kind !== "income") {
+      const lapsed = !!it.possibly_cancelled && !paid;
+      calendar.push({ date: d, id: it.id, name: it.name, amount: it.amount, kind: it.kind, paid: !!paid, paid_amount: paid ? Math.abs(paid.amount) : 0, lapsed });
+      if (it.kind !== "income" && !lapsed) {
         dueThisMonth += it.amount;
         if (paid) paidThisMonth += Math.abs(paid.amount);
       }
     }
+    if (it.possibly_cancelled) continue;
     // next unpaid occurrence from today (allow a few days late)
     const soon = occurrences(it, msDay(dayMs(today) - 5 * DAY), horizon)
       .filter((d) => !(it.merchant_key && matchPaid(d, it, txIndex)));
@@ -310,9 +360,9 @@ function list(app, userId, monthKey) {
     }
     incomeEstimate = util.round2(sum / 3);
   }
-  const remaining = calendar.filter((c) => c.kind !== "income" && !c.paid && c.date >= today).reduce((s, c) => s + c.amount, 0);
+  const remaining = calendar.filter((c) => c.kind !== "income" && !c.paid && !c.lapsed && c.date >= today).reduce((s, c) => s + c.amount, 0);
   return {
-    month: r.key, today, items, calendar, upcoming,
+    month: r.key, today, items, calendar, upcoming, possibly_cancelled: items.filter((x) => x.possibly_cancelled).length,
     totals: {
       subscriptions: util.round2(totals.subscription), bills: util.round2(totals.bill), income: util.round2(totals.income),
       income_estimate: incomeEstimate,
