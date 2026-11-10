@@ -38,7 +38,7 @@ const DIRECTORY = [
     "rocket mortgage", "quicken loans", "home mtg", "mr cooper", "pennymac", "freedom mortgage", "loancare", "newrez",
     "shellpoint", "appfolio", "buildium", "rentcafe", "yardi", "bilt rent", "avail rent", "zillow rent", "rent payment",
     "property management", "mtg pymt", "mortgage payment",
-  ], ["rent", "mortgage", "landlord", "apartment", "apartments", "lease", "properties", "realty"]],
+  ], ["rent", "mortgage", "landlord", "apartment", "apartments", "lease", "properties", "realty", "management", "mgmt", "property mgmt", "residential"]],
   ["Utilities", [
     "comcast", "xfinity", "spectrum", "charter comm", "cox comm", "verizon", "vzwrls", "at&t", "att", "t-mobile", "tmobile",
     "sprint", "mint mobile", "visible", "cricket wireless", "boost mobile", "metropcs", "metro by t-mobile", "us cellular",
@@ -112,7 +112,7 @@ const DIRECTORY = [
   ], ["pharmacy", "rx", "doctor", "medical", "dental", "dentist", "orthodont", "orthodontics", "clinic", "hospital",
     "urgent care", "optometry", "optometrist", "vision", "eyecare", "physician", "pediatric", "pediatrics", "dermatology",
     "chiropractic", "therapy", "therapist", "counseling", "health", "healthcare", "gym", "fitness", "yoga", "pilates",
-    "crossfit", "dds", "radiology", "surgery", "copay"]],
+    "crossfit", "climbing", "bouldering", "climbing gym", "dds", "radiology", "surgery", "copay"]],
   ["Subscriptions", [
     "netflix", "spotify", "hulu", "disney plus", "disneyplus", "youtube premium", "youtube tv", "youtubetv", "google youtube",
     "apple com bill", "itunes", "prime video", "amazon prime", "hbo max", "hbomax", "max com", "paramount", "peacock",
@@ -159,7 +159,11 @@ const DIRECTORY = [
     "lululemon", "athleta", "victorias secret", "torrid", "lane bryant", "carters", "childrens place", "zappos", "dsw",
     "famous footwear", "skechers", "journeys", "claires", "kay jewelers", "zales", "pandora jewelry", "shopify", "wish",
     "poshmark", "mercari", "depop", "thredup", "rent the runway", "stitch fix", "chewy", "apple com", "microsoft store",
-  ], ["store", "shop", "boutique", "outlet", "mall", "retail", "clothing", "apparel", "shoes", "jewelry", "electronics"]],
+  ], ["store", "shop", "boutique", "outlet", "mall", "retail", "clothing", "apparel", "shoes", "jewelry", "electronics", "merch", "merchandise"]],
+  ["Cash & ATM", [
+    "atm withdrawal", "atm w d", "atm wd", "atm cash", "cash withdrawal", "withdrawal atm", "teller withdrawal",
+    "counter withdrawal", "cash advance",
+  ], ["atm", "cash"]],
   ["Fees & Charges", [
     "overdraft", "nsf fee", "insufficient funds", "monthly service fee", "service charge", "maintenance fee", "atm fee",
     "foreign transaction fee", "intl transaction fee", "late fee", "annual fee", "interest charge", "finance charge",
@@ -178,12 +182,94 @@ const DIRECTORY = [
   ], ["gift", "gifts", "florist", "flowers"]],
 ];
 
+// Utah merchants, with extra coverage for Ogden / Weber County, Brigham City / Box Elder and
+// Logan / Cache Valley. City names alone are never keywords (bank text often ends with
+// "OGDEN UT"), only business names.
+const REGIONAL = [
+  ["Groceries", [
+    "smiths", "smiths marketplace", "harmons", "maceys", "lees marketplace", "lees market", "ridleys", "ridleys family",
+    "dicks market", "kents market", "bowmans market", "stokes market", "stokes marketplace", "days market", "rancho market",
+    "rancho markets", "la favorita", "associated food", "lins market", "reams", "gossner", "winco foods",
+  ], []],
+  ["Dining Out", [
+    // Utah chains
+    "cafe rio", "costa vida", "zupas", "cafe zupas", "swig", "fiiz", "sodalicious", "dirty dough", "chip cookies",
+    "crave cookies", "arctic circle", "apollo burger", "crown burgers", "hires big h", "training table", "bajio", "barbacoa",
+    "cubbys", "rumbi", "kneaders", "great harvest", "gandolfos", "betos", "red iguana", "j dawgs", "jdawgs", "pizza pie cafe",
+    "the pie pizzeria", "litzas pizza", "leatherbys", "wingers", "black bear diner", "village inn", "iceberg drive inn",
+    "hruskas kolaches", "waffle love", "sweeto burrito", "mo bettahs", "mo-bettahs", "beans & brews", "beans and brews",
+    "pier 49 pizza", "hokulia", "warrens", "warrens craft burgers", "even stevens", "teriyaki stix",
+    "sill s cafe", "sills cafe", "pita pit", "neighborhood hangout", "chunga s", "chungas",
+    // Ogden / Weber County
+    "roosters brewing", "roosters", "lucky slice", "slackwater", "pig & a jelly jar", "pig and a jelly jar", "hearth on 25th",
+    "union grill", "tona sushi", "rovalis", "sonora grill", "grounds for coffee", "ramen haus",
+    "ogdens own", "the shooting star saloon", "shooting star saloon",
+    // Brigham City / Box Elder
+    "maddox ranch", "maddox ranch house", "peach city", "peach city ice cream", "idle isle",
+    // Logan / Cache Valley
+    "aggie ice cream", "angies restaurant", "firehouse pizzeria", "herms inn", "juniper take out", "cafe sabor",
+    "center street grill", "bluebird restaurant", "tandoori oven", "mortys cafe", "jacks wood fired", "le nonne",
+    "coppermill restaurant", "caspers ice cream", "elements restaurant", "the white owl",
+    // seen on real Ogden-area statements
+    "snowie", "snowie usa", "zeppes", "zeppes italian ice", "mac attack", "tokyo station", "menchies", "yogurtland",
+    "sweet frog", "fiiz drinks", "swig drinks", "bubble tea", "nielsens frozen custard", "leatherbys family creamery",
+  ], ["frozen yogurt", "yogurt", "froyo", "shaved ice", "shave ice", "snow cone", "italian ice", "soda", "sodas", "soda shop",
+    "drive in", "drive-in", "custard", "creamery", "shakes", "drinks"]],
+  ["Transportation", [
+    "maverik", "sinclair", "common cents", "top stop", "tesoro", "holiday oil", "quick quack", "tagg n go", "tagg-n-go",
+    "big o tires", "les schwab", "burt brothers", "uta", "utah transit", "frontrunner", "udot", "utah dmv",
+    "utah motor vehicle", "ken garff", "larry h miller", "lhm", "slc airport parking", "smiths fuel", "maverik fuel",
+    "bay wash", "ride pride", "ride pride carwash", "mister car wash", "super suds", "sparkle car wash", "goo goo car wash",
+  ], ["carwash", "car wash", "auto wash", "auto spa", "express wash", "detailing", "auto detail"]],
+  ["Utilities", [
+    "rocky mountain power", "enbridge", "enbridge gas", "questar", "questar gas", "logan city utilities", "logan city light",
+    "logan city corp", "ogden city utilities", "ogden city corp", "brigham city corp", "brigham city utilities",
+    "weber basin water", "bona vista water", "utopia", "utopia fiber", "xmission", "google fiber", "beehive broadband",
+    "allwest", "veracity", "centracom", "sumo fiber", "connext", "ace disposal", "wasatch integrated",
+  ], ["city corporation", "city corp", "city utilities", "water district", "improvement district", "sewer district"]],
+  ["Health", [
+    "intermountain", "intermountain health", "mckay-dee", "mckay dee", "logan regional", "ogden regional", "ogden clinic",
+    "tanner clinic", "budge clinic", "revere health", "mountainstar", "university of utah health", "u of u health",
+    "instacare", "vasa fitness", "vasa", "momentum climbing", "the front climbing", "the front climb", "the front ogden",
+    "the front slc", "the front logan", "cache valley hospital",
+    "brigham city community hospital", "primary childrens", "smiths pharmacy",
+  ], []],
+  ["Insurance", [
+    "selecthealth", "select health", "regence", "bear river mutual", "farm bureau", "dmba", "pehp", "emi health",
+    "university of utah health plans",
+  ], []],
+  ["Entertainment", [
+    "lagoon", "cherry hill", "boondocks", "megaplex", "snowbasin", "powder mountain", "nordic valley", "beaver mountain",
+    "cherry peak", "snowbird", "alta ski", "brighton resort", "solitude mountain", "park city mountain", "deer valley",
+    "sundance", "ogden raptors", "utah jazz", "real salt lake", "salt lake bees", "hogle zoo", "living planet aquarium",
+    "thanksgiving point", "treehouse museum", "dinosaur park", "fat cats", "classic fun center", "peerys egyptian",
+    "ellen eccles", "utah festival opera", "get air", "cowabunga bay", "seven peaks", "ogden nature center",
+    "utah state parks", "recreation gov", "epic pass", "ikon pass", "ski utah", "aggie athletics", "weber state athletics",
+  ], []],
+  ["Shopping", [
+    "deseret book", "deseret industries", "deseret ind", "als sporting", "als sporting goods", "sportsmans warehouse",
+    "scheels", "cal ranch", "downeast", "down east", "newgate mall", "cache valley mall", "station park", "zurchers",
+    "orson gygi", "gygi", "kirkhams", "fred meyer",
+  ], []],
+  ["Home", ["rc willey", "r c willey", "ifa country store", "ifa"], []],
+  ["Education", [
+    "weber state", "weber state university", "utah state university", "usu", "bridgerland", "bridgerland technical",
+    "ogden-weber tech", "ogden weber tech", "owtc", "davis tech", "university of utah", "byu", "brigham young", "uvu",
+    "utah valley university", "slcc", "salt lake community college", "box elder school district",
+    "cache county school district", "logan city school district", "ogden school district", "weber school district",
+  ], []],
+  ["Charity", ["church of jesus christ", "the church of jesus christ", "lds church", "tithing", "fast offering", "utah food bank"], []],
+  ["Subscriptions", ["playit", "playit gg", "fishbrain", "onx", "onx maps", "gohunt", "strava", "alltrails", "allstays"], []],
+  ["Shopping", ["rainbow gardens"], []],
+];
+
 // If a user removed or archived a category, send its merchants somewhere sensible instead.
 const FALLBACK = {
   "Travel": "Entertainment", "Home": "Shopping", "Pets": "Shopping", "Charity": "Gifts", "Fees & Charges": "",
-  "Education": "", "Investing": "Transfers", "Subscriptions": "Entertainment", "Personal Care": "Shopping",
+  "Education": "", "Investing": "Transfers", "Cash & ATM": "", "Subscriptions": "Entertainment", "Personal Care": "Shopping",
 };
 const INCOME_ONLY = { "Paycheck": 1, "Other Income": 1 };
+const SPEND_ONLY = { "Cash & ATM": 1 };
 
 // "PURCHASE AUTHORIZED ON 11/02 SQ *BLUE BOTTLE #123 SAN FRANCISCO CA" -> "blue bottle san francisco ca"
 function clean(s) {
@@ -203,12 +289,14 @@ const keyFor = (k) => " " + clean(k).trim() + " ";
 const COMPILED = [];
 // Generic payment/transfer words lose to any other generic word ("CITY UTILITY ONLINE PAYMENT" is a utility).
 const LOW_WEAK = { "Credit Card Payment": 1, "Transfers": 1, "Other Income": 1 };
-for (const [cat, strong, weak] of DIRECTORY) {
+// Person-to-person payments name a person, which can look like a business ("ZELLE TO MADDOX SMITH").
+const P2P = { "zelle": 1, "venmo": 1, "cash app": 1, "square cash": 1, "apple cash": 1, "paypal transfer": 1 };
+for (const [cat, strong, weak] of DIRECTORY.concat(REGIONAL)) {
   for (const k of strong) {
     const key = keyFor(k);
     // also catch run-together spellings: "YouTubePremium", "STEAMGAMES.COM", "HOMEDEPOT"
     const glued = key.replace(/[^a-z&]/g, "");
-    COMPILED.push({ cat, key, score: 1000 + k.length, glued: glued.length >= 7 && key.trim().indexOf(" ") !== -1 ? glued : "" });
+    COMPILED.push({ cat, key, score: (P2P[k] ? 5000 : 1000) + k.length, glued: glued.length >= 7 && key.trim().indexOf(" ") !== -1 ? glued : "" });
   }
   for (const k of weak) COMPILED.push({ cat, key: keyFor(k), score: LOW_WEAK[cat] ? k.length / 100 : k.length });
 }
@@ -221,6 +309,7 @@ function directoryMatch(rawText, amount) {
   for (const e of COMPILED) {
     if (e.key.trim() === "") continue;
     if (INCOME_ONLY[e.cat] && !(amount > 0)) continue;
+    if (SPEND_ONLY[e.cat] && amount > 0) continue;
     if (text.indexOf(e.key) === -1 && !(e.glued && tokens.some((t) => t.indexOf(e.glued) !== -1))) continue;
     if (!best || e.score > best.score) best = { name: e.cat, score: e.score };
   }
@@ -397,6 +486,7 @@ const DEFAULT_CATEGORIES = [
   ["Pets", "wants", 0, "🐾"],
   ["Gifts", "wants", 0, "🎁"],
   ["Charity", "wants", 0, "💝"],
+  ["Cash & ATM", "wants", 0, "🏧"],
   ["Emergency Fund", "savings", 0, "🧯"],
   ["Investing", "savings", 0, "📈"],
   ["Transfers", "transfer", 0, "🔁"],
@@ -420,4 +510,4 @@ function seedCategories(app, userId, only) {
   }
 }
 
-module.exports = { context, categorize, applyToUncategorized, refileLegacy, seedCategories, learnFrom, directoryMatch, clean, DIRECTORY };
+module.exports = { context, categorize, applyToUncategorized, refileLegacy, seedCategories, learnFrom, directoryMatch, clean, DIRECTORY, REGIONAL };
