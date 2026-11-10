@@ -359,11 +359,12 @@ label.field > span { display: block; font-size: 13px; font-weight: 500; color: v
 .d-big { fill: var(--text); font-size: 20px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .d-sub { fill: var(--muted); font-size: 12px; }
 .d-legend { display: flex; flex-direction: column; gap: 2px; min-width: 240px; flex: 1; }
-.d-item { display: flex; gap: 10px; align-items: center; border: 0; background: none; padding: 8px; border-radius: 8px; cursor: pointer; text-align: left; transition: background-color var(--t) var(--ease); }
+.d-item { display: flex; width: 100%; min-width: 0; gap: 10px; align-items: center; border: 0; background: none; padding: 8px; border-radius: 8px; cursor: pointer; text-align: left; transition: background-color var(--t) var(--ease); }
 .d-item:hover:not(:disabled) { background: var(--surface-2); }
 .d-item:disabled { cursor: default; }
 .d-item i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-.d-item .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-item .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.d-item .num { flex: none; }
 
 /* ---------- category marks ---------- */
 .cm {
@@ -547,7 +548,8 @@ tfoot td { border-top: 1px solid var(--border-strong); border-bottom: 0; padding
   .hide-sm { display: none; }
   .halves { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: 1fr 1fr; gap: 12px; }
-  .d-legend { width: 100%; min-width: 0; }
+  /* phones: donut on top, legend full width underneath */
+  .d-legend { flex: 1 1 100%; width: 100%; min-width: 0; }
   .cal-c { height: 38px; }
   .acc-t td:first-child { min-width: 180px; }
   .acc-t .acc-name { min-width: 160px; }

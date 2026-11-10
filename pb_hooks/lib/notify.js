@@ -6,12 +6,23 @@ function smtpReady(app) {
   return app.settings().smtp.enabled;
 }
 
+// Email clients fetch images through their own proxies (Gmail does), which can't reach a home or LAN
+// server, so the logo comes from the public repo instead of APP_URL.
+const LOGO_URL = "https://raw.githubusercontent.com/Brandonk95/Budget/main/pb_public/brand/logo.png";
+
+function monthName(key) {
+  const [y, m] = String(key).split("-").map(Number);
+  const names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return names[m - 1] ? `${names[m - 1]} ${y}` : key;
+}
+const days = (n) => `${n} day${n === 1 ? "" : "s"}`;
+
 function layout(app, title, bodyHtml) {
   const url = app.settings().meta.appURL;
   const name = app.settings().meta.appName;
   return `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;line-height:1.5">
 <div style="max-width:560px;margin:0 auto;padding:24px">
-${name === "Keel" && /^https?:\/\//.test(url) ? `<div style="text-align:center;margin:0 0 16px"><img src="${util.esc(url.replace(/\/$/, ""))}/brand/logo.png" alt="Keel" width="150" style="border-radius:12px;display:inline-block"></div>` : ""}
+${name === "Keel" ? `<div style="text-align:center;margin:0 0 16px"><img src="${LOGO_URL}" alt="Keel" width="150" height="85" style="border-radius:12px;display:inline-block;border:0"></div>` : ""}
 <div style="background:#fff;border-radius:16px;padding:24px;border:1px solid #e5eaf1">
 <h2 style="margin:0 0 16px;font-size:20px;font-weight:600;letter-spacing:-.01em">${util.esc(title)}</h2>${bodyHtml}
 <p style="margin:24px 0 0"><a href="${util.esc(url)}" style="background:#155eef;color:#fff;padding:11px 18px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:600">Open ${util.esc(name)}</a></p>
@@ -71,11 +82,11 @@ function checkBudgets(app, user) {
   }
   if (!hits.length) return 0;
   const rows = [row(["Category", "Spent", "Budget"], true)].concat(hits.map(({ c, level }) =>
-    row([`${util.esc(c.icon)} ${util.esc(c.name)} ${level === "over" ? "🔴" : "🟡"}`, util.money(c.spent), util.money(c.budget)])));
+    row([`${util.esc(c.name)} <span style="font-size:12px;font-weight:600;color:${level === "over" ? "#c93d48" : "#9a6512"}">${level === "over" ? "over" : "close"}</span>`, util.money(c.spent), util.money(c.budget)])));
   const over = hits.filter((h) => h.level === "over").length;
   const subject = over ? `You've passed ${over} budget${over > 1 ? "s" : ""}` : `You're getting close to a budget`;
   send(app, user.getString("email"), subject, layout(app, subject,
-    `<p>Here's where things stand for ${data.month}, with ${data.remaining_days} day(s) to go:</p>${table(rows)}
+    `<p>Here's where things stand for ${monthName(data.month)}, with ${days(data.remaining_days)} to go:</p>${table(rows)}
      <p>Safe to spend: <b>${util.money(data.safe_per_day)}/day</b> across all categories.</p>`));
   return hits.length;
 }
@@ -130,7 +141,7 @@ function digest(app, user) {
 
   const cats = data.categories.filter((c) => c.kind !== "income" && (c.budget > 0 || c.spent > 0))
     .sort((a, b) => (b.pct || 0) - (a.pct || 0)).slice(0, 8)
-    .map((c) => row([`${util.esc(c.icon)} ${util.esc(c.name)}`, util.money(c.spent), c.budget ? util.money(c.budget) : "—", c.pct != null ? c.pct + "%" : ""]));
+    .map((c) => row([util.esc(c.name), util.money(c.spent), c.budget ? util.money(c.budget) : "—", c.pct != null ? c.pct + "%" : ""]));
 
   let bills = [];
   try {
@@ -141,7 +152,7 @@ function digest(app, user) {
   const tips = data.tips.slice(0, 5).map((t) => `<li style="margin-bottom:6px">${util.esc(t.text)}</li>`).join("");
   const html = layout(app, `Your weekly budget check-in`, `
     <p>Last 7 days you spent <b>${util.money(weekSpend)}</b>. Month to date: <b>${util.money(data.spent)}</b> of <b>${util.money(data.budgeted)}</b> budgeted, income <b>${util.money(data.income)}</b>.</p>
-    <p>Safe to spend for the rest of ${data.month}: <b>${util.money(data.safe_per_day)}/day</b> (${data.remaining_days} days left).</p>
+    <p>Safe to spend for the rest of ${monthName(data.month)}: <b>${util.money(data.safe_per_day)}/day</b> (${days(data.remaining_days)} left).</p>
     ${cats.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Categories</h3>${table([row(["", "Spent", "Budget", "Used"], true)].concat(cats))}` : ""}
     ${bills.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Bills due in the next 7 days</h3>${table(bills)}` : ""}
     ${top.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Biggest purchases this week</h3>${table(top)}` : ""}
