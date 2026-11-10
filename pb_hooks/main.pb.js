@@ -9,6 +9,26 @@ onBootstrap((e) => {
   require(`${__hooks}/lib/setup.js`).applySettings(e.app);
 });
 
+// Once per server start (so after any update and its migrations): give the latest categorizer a
+// pass over anything still uncategorized, and the first time, re-file what the old guesses got wrong.
+cronAdd("budget_startup_categorize", "* * * * *", () => {
+  if ($app.store().has("keel_startup_categorized")) return;
+  $app.store().set("keel_startup_categorized", true);
+  const rules = require(`${__hooks}/lib/rules.js`);
+  const marker = $app.dataDir() + "/.keel_refiled_v1";
+  let refile = false;
+  try { $os.stat(marker); } catch (_) { refile = true; }
+  let filled = 0, refiled = 0;
+  for (const u of $app.findAllRecords("users")) {
+    try {
+      if (refile) refiled += rules.refileLegacy($app, u.id);
+      filled += rules.applyToUncategorized($app, u.id);
+    } catch (err) { $app.logger().warn("auto-categorize failed", "user", u.id, "error", String(err)); }
+  }
+  if (refile) { try { $os.writeFile(marker, String(refiled), 0o644); } catch (_) {} }
+  if (filled || refiled) $app.logger().info("auto-categorized on startup", "filled", filled, "refiled", refiled);
+});
+
 // Make browsers revalidate the web app files so updates show up right after a redeploy.
 routerUse((e) => {
   const p = e.request.url.path;
@@ -78,7 +98,15 @@ onRecordUpdateRequest((e) => {
     try { r = e.app.findRecordById(col, id); } catch (_) { throw new BadRequestError("Invalid " + col + " reference."); }
     if (r.getString("user") !== uid) throw new ForbiddenError("That " + col.replace(/s$/, "") + " isn't yours.");
   };
-  if (name === "transactions") { owned("accounts", rec.getString("account")); owned("categories", rec.getString("category")); }
+  let learn = false;
+  if (name === "transactions") {
+    owned("accounts", rec.getString("account")); owned("categories", rec.getString("category"));
+    // a category picked by hand teaches Keel about that merchant
+    if (rec.getString("category") !== rec.original().getString("category")) {
+      rec.set("cat_manual", !!rec.getString("category"));
+      learn = !!rec.getString("category");
+    }
+  }
   if (name === "rules") owned("categories", rec.getString("category"));
   if (name === "accounts") {
     const orig = rec.original();
@@ -93,11 +121,16 @@ onRecordUpdateRequest((e) => {
     rec.set("edited", true);
   }
   e.next();
+  if (learn) {
+    try { require(`${__hooks}/lib/rules.js`).learnFrom(e.app, rec); } catch (err) { e.app.logger().warn("learn category failed", "error", String(err)); }
+  }
 }, "transactions", "rules", "accounts", "recurring");
 
 // Auto-categorize manually created transactions.
 onRecordCreateRequest((e) => {
-  if (!e.record.getString("category")) {
+  if (e.record.getString("category")) {
+    e.record.set("cat_manual", true);
+  } else {
     const rules = require(`${__hooks}/lib/rules.js`);
     const r = e.record;
     const ctx = rules.context(e.app, r.getString("user"));

@@ -10,7 +10,7 @@
 - **Net worth** over time: assets minus credit cards and loans, recorded daily (earlier history is estimated from transactions).
 - **Overview**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
 - **Insights**: month-end projections, a 50/30/20 check and plain-language tips.
-- **Auto-categorization**: your own rules ("contains *kroger* → Groceries") plus built-in guesses for common merchants. When you change a transaction's category, the app offers to turn it into a rule.
+- **Auto-categorization** that learns: your own rules ("contains *kroger* → Groceries") come first, then the categories you have picked by hand for each merchant, then a built-in directory of hundreds of merchants (groceries, gas, streaming, airlines, utilities, pet stores and more). It reads messy bank text like "PURCHASE AUTHORIZED ON 11/02 SQ *BLUE BOTTLE #123". Change one transaction's category and Keel files that merchant's other uncategorized and future transactions the same way.
 - **Goals** with the monthly amount needed to hit each target date.
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
 - **Installable app** for phones and desktops: home-screen icon, full-screen window, opens offline.

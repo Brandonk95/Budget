@@ -847,7 +847,7 @@
     if (!pattern || !cat) return;
     const el = document.createElement("div");
     el.className = "toast";
-    el.innerHTML = `Always put “${esc(pattern)}” in ${esc(cat.name)}? <button class="btn sm" style="margin-left:8px">Create rule</button>`;
+    el.innerHTML = `<span>Got it. Keel will file “${esc(pattern)}” under ${esc(cat.name)} from now on.</span> <button class="btn sm" style="margin-left:8px">Make a rule</button>`;
     $("#toasts").appendChild(el);
     const timer = setTimeout(() => el.remove(), 7000);
     $("button", el).onclick = () => { clearTimeout(timer); el.remove(); createRuleDialog(pattern, categoryId); };
@@ -1581,7 +1581,7 @@
         </div>
         <div class="card">
           <div class="card-h"><h2>Categorization rules</h2><div class="spacer"></div><button class="btn" id="run-rules">Apply to uncategorized</button><button class="btn primary" id="add-rule">+ Rule</button></div>
-          <p class="small muted" style="margin-top:0">New transactions whose description or payee contains the text get that category. Built-in guesses handle common merchants; your rules win.</p>
+          <p class="small muted" style="margin-top:0">Rules come first: any transaction whose description or payee contains the text gets that category. After that, Keel uses the categories you have picked by hand for each merchant, then its built-in list of common merchants.</p>
           ${rules.length ? `<table><tbody>${rules.map((r) => { const c = catById(r.category); return `<tr><td class="code">${esc(r.pattern)}</td><td>→ ${c ? esc(c.icon + " " + c.name) : "?"}</td><td class="right"><button class="btn sm danger rule-del" data-id="${r.id}">Remove</button></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">No rules yet. Tip: when you change a transaction's category you'll be offered a rule.</div>`}
         </div>
       </div>`;
