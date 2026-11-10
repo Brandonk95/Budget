@@ -294,6 +294,7 @@ label.field > span { display: block; font-size: 13px; font-weight: 500; color: v
   border: 1px solid var(--border); box-shadow: var(--shadow-pop); animation: rise-in 220ms var(--ease);
 }
 .modal.wide { max-width: 860px; }
+.modal.mid { max-width: 620px; }
 .modal h2 { margin-bottom: 20px; font-size: 20px; }
 .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 24px; flex-wrap: wrap; }
 @keyframes fade-in { from { opacity: 0; } }
@@ -627,4 +628,23 @@ tfoot td { border-top: 1px solid var(--border-strong); border-bottom: 0; padding
   .lp-shot { padding: 18px; }
   .lp-band { padding: 28px 20px; }
   .lp-cta .btn { flex: 1; justify-content: center; }
+}
+
+/* ---------- recurring charge history ---------- */
+.rec-hist { padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.h-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.h-stat { background: var(--surface-2); border-radius: var(--radius-md); padding: 12px 14px; min-width: 0; }
+.h-v { font-size: 20px; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; }
+.h-bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; height: 84px; margin: 16px 0 4px; align-items: end; }
+.h-bar { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; cursor: default; }
+.h-bar i { width: 100%; max-width: 22px; max-height: calc(100% - 15px); background: var(--s1); border-radius: 4px 4px 0 0; }
+.h-bar span { font-size: 11px; color: var(--subtle); line-height: 1; }
+.h-list { max-height: 260px; overflow-y: auto; }
+.h-row { display: flex; gap: 10px; align-items: center; padding: 8px 2px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.h-row:last-child { border-bottom: 0; }
+.h-row.extra { display: none; }
+@media (max-width: 520px) {
+  .h-stats { grid-template-columns: 1fr 1fr; }
+  .h-stats .h-stat:last-child { grid-column: 1 / -1; }
+  .h-v { font-size: 18px; }
 }

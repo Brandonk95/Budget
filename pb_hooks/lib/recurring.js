@@ -456,4 +456,47 @@ function subscriptions(app, userId) {
   };
 }
 
-module.exports = { detect, list, subscriptions, normalizePayee, occurrences, PER_MONTH };
+// Every charge (or deposit) from one recurring item's merchant, with what it has cost over time.
+function history(app, userId, id) {
+  const r = app.findRecordById("recurring", id);
+  if (r.getString("user") !== userId) throw new NotFoundError();
+  const key = r.getString("merchant_key");
+  const income = r.getString("kind") === "income";
+  const out = { id, name: r.getString("name"), kind: r.getString("kind"), charges: [], months: [],
+    totals: { all_time: 0, this_year: 0, last_12m: 0, count: 0, average: 0, first_date: "", last_date: "" } };
+  if (!key) return out;
+  // narrow in the database by the merchant's first word, then match exactly like detection does
+  const word = key.split(" ").find((w) => w.length >= 3) || key;
+  const rows = app.findRecordsByFilter("transactions",
+    `user = {:u} && exclude = false && amount ${income ? ">" : "<"} 0 && (payee ~ {:w} || description ~ {:w})`,
+    "-date", 0, 0, { u: userId, w: word });
+  const today = todayDay();
+  const year = today.slice(0, 4);
+  const since12 = addMonths(today.slice(0, 7) + "-01", -11);
+  const byMonth = {};
+  for (const t of rows) {
+    if (normalizePayee(t.getString("payee") || t.getString("description")) !== key) continue;
+    const day = t.getString("date").slice(0, 10);
+    const amt = Math.abs(t.getFloat("amount"));
+    out.charges.push({ id: t.id, date: day, amount: util.round2(amt), description: t.getString("payee") || t.getString("description"), account: t.getString("account") });
+    out.totals.all_time += amt;
+    if (day.slice(0, 4) === year) out.totals.this_year += amt;
+    if (day >= since12) out.totals.last_12m += amt;
+    byMonth[day.slice(0, 7)] = (byMonth[day.slice(0, 7)] || 0) + amt;
+  }
+  const n = out.charges.length;
+  out.totals.count = n;
+  if (n) {
+    out.totals.first_date = out.charges[n - 1].date;
+    out.totals.last_date = out.charges[0].date;
+    out.totals.average = util.round2(out.totals.all_time / n);
+  }
+  for (const k of ["all_time", "this_year", "last_12m"]) out.totals[k] = util.round2(out.totals[k]);
+  for (let i = 11; i >= 0; i--) {
+    const m = addMonths(today.slice(0, 7) + "-01", -i).slice(0, 7);
+    out.months.push({ month: m, total: util.round2(byMonth[m] || 0) });
+  }
+  return out;
+}
+
+module.exports = { detect, list, subscriptions, history, normalizePayee, occurrences, PER_MONTH };

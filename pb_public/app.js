@@ -809,6 +809,35 @@
     if (subs) renderSubscriptions($("#subs-box", view), subs);
   }
 
+  // What a recurring item has cost: totals, the last 12 months as bars, and every charge.
+  function historyHtml(h, it) {
+    const inc = it.kind === "income";
+    const noun = inc ? "deposit" : "charge";
+    if (!h.charges.length) {
+      return `<div class="muted small">${it.merchant_key ? `No matching ${noun}s found in your transactions yet.` : `Added by hand, so there are no ${noun}s to match it with.`}</div>`;
+    }
+    const t = h.totals;
+    const yr = new Date().getFullYear();
+    const max = Math.max(1, ...h.months.map((x) => x.total));
+    const stat = (label, v, sub) => `<div class="h-stat"><div class="label">${label}</div><div class="h-v num">${money(v)}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
+    const rows = h.charges.map((c, i) => {
+      const older = h.charges[i + 1];
+      const diff = older ? c.amount - older.amount : 0;
+      const change = Math.abs(diff) >= 0.01 ? `<span class="small ${diff > 0 === !inc ? "negc" : "pos"}" ${tipAttr(`${diff > 0 ? "Up" : "Down"} from ${esc(money(older.amount))}`)}>${diff > 0 ? "▲" : "▼"} ${money(Math.abs(diff))}</span>` : "";
+      return `<div class="h-row${i >= 12 ? " extra" : ""}"><span>${esc(prettyDate(c.date))} ${c.date.slice(0, 4)}</span><span class="spacer"></span>${change}<span class="num">${inc ? "+" : ""}${money(c.amount)}</span></div>`;
+    }).join("");
+    return `
+      <div class="h-stats">
+        ${stat(`This year (${yr})`, t.this_year)}
+        ${stat("Last 12 months", t.last_12m)}
+        ${stat("All time", t.all_time, `${plural(t.count, noun)} since ${esc(prettyDate(t.first_date))} ${t.first_date.slice(0, 4)}`)}
+      </div>
+      <div class="h-bars" role="img" aria-label="${inc ? "Received" : "Paid"} per month, last 12 months">${h.months.map((x) => `<div class="h-bar" ${tipAttr(`<b>${esc(monthLabel(x.month))}</b><br>${x.total ? money(x.total) : `No ${noun}`}`)}><i style="height:${Math.max(x.total ? 4 : 0, (x.total / max) * 100)}%"></i><span>${esc(shortMonth(x.month).charAt(0))}</span></div>`).join("")}</div>
+      <div class="kind-h row"><span>${inc ? "Deposits" : "Charges"}</span><div class="spacer"></div><span class="small muted">Average ${money(t.average)}</span></div>
+      <div class="h-list">${rows}</div>
+      ${h.charges.length > 12 ? `<button type="button" class="btn sm" id="h-more" style="margin-top:8px">Show all ${h.charges.length}</button>` : ""}`;
+  }
+
   const COMMON_SUBS = ["Netflix", "Spotify", "Hulu", "Disney+", "Max", "YouTube Premium", "Apple One", "iCloud+", "Amazon Prime", "Paramount+", "Peacock", "Audible", "Xbox Game Pass", "PlayStation Plus", "Nintendo Switch Online", "Adobe Creative Cloud", "Microsoft 365", "Google One", "Dropbox", "ChatGPT Plus", "Claude Pro", "GitHub", "1Password", "Duolingo", "Headspace", "Gym membership", "New York Times", "SiriusXM"];
 
   function editRecurring(it, defaults) {
@@ -817,7 +846,7 @@
     const sel = (name, map, v) => `<select name="${name}">${Object.keys(map).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${map[k]}</option>`).join("")}</select>`;
     modal(isNew ? (it.kind === "subscription" ? "Add subscription" : "Add recurring") : it.name, `
       <form id="rec-form" class="stack">
-        ${!isNew && it.last_date ? `<div class="callout small">Last ${it.kind === "income" ? "deposit" : "charge"}: <b>${money(it.last_amount || it.amount)}</b> on ${prettyDate(it.last_date)} ${dateOnly(it.last_date).slice(0, 4)}${it.source === "auto" ? " · detected from your transactions" : ""}</div>` : ""}
+        ${!isNew ? `<section id="rec-hist" class="rec-hist" aria-live="polite"><div class="muted small"><span class="loading-dots">Loading history</span></div></section>` : ""}
         <label class="field"><span>Name</span><input name="name" required value="${esc(it.name)}" list="common-subs" placeholder="e.g. Netflix, Rent, Electric"></label>
         <datalist id="common-subs">${COMMON_SUBS.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
         <div class="form-grid">
@@ -838,6 +867,15 @@
       </form>`, {
       onMount: (m, close) => {
         const form = $("#rec-form", m);
+        if (!isNew) {
+          m.classList.add("mid");
+          api(`/api/budget/recurring/${it.id}/history`).then((h) => {
+            const box = $("#rec-hist", m); if (!box) return;
+            box.innerHTML = historyHtml(h, it);
+            const more = $("#h-more", box);
+            if (more) more.onclick = () => { $$(".h-row.extra", box).forEach((x) => x.classList.remove("extra")); more.hidden = true; };
+          }).catch(() => { const box = $("#rec-hist", m); if (box) box.innerHTML = `<div class="muted small">Couldn't load the charge history.</div>`; });
+        }
         const save = async (extra) => {
           const fd = Object.fromEntries(new FormData(form));
           const data = { name: fd.name.trim(), amount: Math.abs(Number(fd.amount) || 0), kind: fd.kind, frequency: fd.frequency, category: fd.category, next_date: fd.next_date ? fd.next_date + " 12:00:00.000Z" : "", ...extra };
