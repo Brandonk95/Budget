@@ -1,5 +1,5 @@
 {
-  "version": "2.10.0",
+  "version": "2.10.1",
   "released": "2026-11-10",
-  "motd": "New Cash flow page: see where your checking balance is headed over the next 30 to 90 days, with bills and paychecks on their dates plus your usual everyday spending. Set a warning level and Keel can email you when your balance is headed below it."
+  "motd": "Account emails (confirm your email, password reset) now match the rest of Keel's emails, and their links open proper pages in Keel instead of a bare confirmation screen."
 }

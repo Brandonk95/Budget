@@ -17,16 +17,20 @@ function monthName(key) {
 }
 const days = (n) => `${n} day${n === 1 ? "" : "s"}`;
 
-function layout(app, title, bodyHtml) {
+// opts.button: { label, href } replaces the "Open Keel" button (null hides it); opts.footer replaces the footer line.
+function layout(app, title, bodyHtml, opts) {
+  opts = opts || {};
   const url = app.settings().meta.appURL;
   const name = app.settings().meta.appName;
+  const btn = opts.button === undefined ? { label: `Open ${name}`, href: url } : opts.button;
+  const footer = opts.footer || "You can change email preferences in Settings.";
   return `<!doctype html><html><body style="margin:0;background:#f5f7fa;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;color:#172033;line-height:1.5">
 <div style="max-width:560px;margin:0 auto;padding:24px">
 ${name === "Keel" ? `<div style="text-align:center;margin:0 0 16px"><img src="${LOGO_URL}" alt="Keel" width="150" height="85" style="border-radius:12px;display:inline-block;border:0"></div>` : ""}
 <div style="background:#fff;border-radius:16px;padding:24px;border:1px solid #e5eaf1">
 <h2 style="margin:0 0 16px;font-size:20px;font-weight:600;letter-spacing:-.01em">${util.esc(title)}</h2>${bodyHtml}
-<p style="margin:24px 0 0"><a href="${util.esc(url)}" style="background:#155eef;color:#fff;padding:11px 18px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:600">Open ${util.esc(name)}</a></p>
-</div><p style="color:#5f6b80;font-size:12px;text-align:center">You can change email preferences in Settings.</p></div></body></html>`;
+${btn ? `<p style="margin:24px 0 0"><a href="${util.esc(btn.href)}" style="background:#155eef;color:#fff;padding:11px 18px;border-radius:10px;text-decoration:none;display:inline-block;font-weight:600">${util.esc(btn.label)}</a></p>` : ""}
+</div><p style="color:#5f6b80;font-size:12px;text-align:center">${util.esc(footer)}</p></div></body></html>`;
 }
 
 function send(app, to, subject, html) {

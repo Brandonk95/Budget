@@ -28,6 +28,7 @@ function applySettings(app) {
   const users = app.findCollectionByNameOrId("users");
   const allow = util.env("ALLOW_SIGNUPS", "true") === "true";
   users.createRule = allow ? "" : null;
+  try { require(`${__hooks}/lib/authmail.js`).apply(app, users); } catch (err) { app.logger().error("auth email templates", "error", String(err)); }
   app.save(users);
 }
 

@@ -169,11 +169,123 @@
     };
   }
 
+  // ------------------------------------------------------------------ email links
+  // Pages the account emails link to: confirm email, choose a new password, confirm a new email.
+  function actionCard(inner) {
+    $("#app").innerHTML = `<div class="auth act"><div class="card">
+      ${isKeel() ? `<span class="wordmark act-mark" role="img" aria-label="Keel"></span>` : `<div class="brand" style="padding:0 0 6px;justify-content:center"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>`}
+      <div id="act-body" aria-live="polite">${inner}</div></div></div>`;
+  }
+  const actSeal = (ok) => `<div class="act-seal ${ok ? "ok" : "bad"}" aria-hidden="true"><svg viewBox="0 0 52 52">
+      <circle class="act-ring" cx="26" cy="26" r="23"/>${ok ? `<path class="act-tick" d="M15 27l7.5 7.5L37.5 19"/>` : `<path class="act-tick" d="M18 18l16 16M34 18L18 34"/>`}</svg></div>`;
+  // Lucide bell, calendar, mail
+  const ACT_ICONS = {
+    bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+    calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  };
+  const actIcon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ACT_ICONS[k]}</svg>`;
+  const goHome = () => { history.replaceState(null, "", "#/"); route(); };
+
+  async function renderAction(kind, token) {
+    const name = state.status.app_name || "Keel";
+    const signedIn = pb.authStore.isValid;
+    const openBtn = `<button class="btn primary act-go" id="act-go">${signedIn ? `Open ${esc(name)}` : "Sign in"}</button>`;
+    const done = (title, text, extra = "") => {
+      $("#act-body").innerHTML = `${actSeal(true)}<h1 class="act-h">${title}</h1><p class="act-p">${text}</p>${extra}${openBtn}`;
+      $("#act-go").onclick = () => { history.replaceState(null, "", signedIn ? "#/" : "#/login"); route(); };
+    };
+    const failed = (title, text) => {
+      document.title = `${title} · ${name}`;
+      $("#act-body").innerHTML = `${actSeal(false)}<h1 class="act-h">${title}</h1><p class="act-p">${text}</p>
+        ${signedIn && kind === "verify" && state.status.smtp ? `<button class="btn primary act-go" id="act-resend">Send a new link</button>` : ""}
+        <button class="btn act-go" id="act-home">${signedIn ? `Open ${esc(name)}` : "Back to sign in"}</button>`;
+      const rs = $("#act-resend");
+      if (rs) rs.onclick = async () => { try { await pb.collection("users").requestVerification(pb.authStore.record.email); rs.disabled = true; rs.textContent = "New link sent. Check your email."; } catch (err) { fail(err); } };
+      $("#act-home").onclick = () => { history.replaceState(null, "", signedIn ? "#/" : "#/login"); route(); };
+    };
+    document.title = `${name}`;
+
+    if (kind === "verify") {
+      document.title = `Email confirmed · ${name}`;
+      actionCard(`<div class="act-wait"><span class="loading-dots">Confirming your email</span></div>`);
+      try {
+        await pb.collection("users").confirmVerification(token);
+        if (signedIn) { try { await pb.collection("users").authRefresh(); } catch (_) {} }
+        const email = signedIn ? pb.authStore.record.email : "";
+        done("You're verified", `${email ? `<b>${esc(email)}</b> is confirmed.` : "Your email is confirmed."} ${esc(name)} can now email you:`,
+          `<ul class="act-list">
+            <li>${actIcon("bell")}<span>Alerts when a budget gets close or goes over</span></li>
+            <li>${actIcon("calendar")}<span>Reminders before bills are due</span></li>
+            <li>${actIcon("mail")}<span>Your weekly summary</span></li>
+          </ul><p class="small muted act-p">Choose which ones in Settings.</p>`);
+      } catch (_) {
+        // already verified counts as success
+        if (signedIn) {
+          try { await pb.collection("users").authRefresh(); } catch (_) {}
+          if (pb.authStore.record && pb.authStore.record.verified) return done("You're already verified", `<b>${esc(pb.authStore.record.email)}</b> was confirmed earlier. Nothing else to do.`);
+        }
+        failed("This link didn't work", "It may have expired or already been used. Confirmation links last 3 days.");
+      }
+      return;
+    }
+
+    if (kind === "reset") {
+      document.title = `Choose a new password · ${name}`;
+      actionCard(`<h1 class="act-h">Choose a new password</h1><p class="act-p">At least 8 characters.</p>
+        <form id="act-form" class="stack" style="text-align:left">
+          <label class="field"><span>New password</span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label class="field"><span>Type it again</span><input name="confirm" type="password" required minlength="8" autocomplete="new-password"></label>
+          <button class="btn primary" style="width:100%;justify-content:center">Save new password</button>
+        </form>`);
+      $("#act-form input").focus();
+      $("#act-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const fd = Object.fromEntries(new FormData(e.target));
+        if (fd.password !== fd.confirm) return toast("The two passwords don't match.");
+        const btn = $("button.primary", e.target); btn.disabled = true; btn.classList.add("loading");
+        try {
+          await pb.collection("users").confirmPasswordReset(token, fd.password, fd.confirm);
+          pb.authStore.clear(); // other sessions are signed out by the reset
+          $("#act-body").innerHTML = `${actSeal(true)}<h1 class="act-h">Password updated</h1><p class="act-p">Sign in with your new password.</p><button class="btn primary act-go" id="act-go">Sign in</button>`;
+          $("#act-go").onclick = () => { history.replaceState(null, "", "#/login"); route(); };
+        } catch (_) {
+          failed("This link didn't work", "Reset links expire after 30 minutes and work once. Ask for a new one from the sign-in page.");
+        }
+      };
+      return;
+    }
+
+    // email-change: PocketBase asks for the account password to confirm
+    document.title = `Confirm your new email · ${name}`;
+    actionCard(`<h1 class="act-h">Confirm your new email</h1><p class="act-p">Enter your password to finish the change.</p>
+      <form id="act-form" class="stack" style="text-align:left">
+        <label class="field"><span>Password</span><input name="password" type="password" required autocomplete="current-password"></label>
+        <button class="btn primary" style="width:100%;justify-content:center">Confirm</button>
+      </form>`);
+    $("#act-form").onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $("button.primary", e.target); btn.disabled = true; btn.classList.add("loading");
+      try {
+        await pb.collection("users").confirmEmailChange(token, new FormData(e.target).get("password"));
+        pb.authStore.clear();
+        $("#act-body").innerHTML = `${actSeal(true)}<h1 class="act-h">Email updated</h1><p class="act-p">Sign in with your new email address.</p><button class="btn primary act-go" id="act-go">Sign in</button>`;
+        $("#act-go").onclick = () => { history.replaceState(null, "", "#/login"); route(); };
+      } catch (_) {
+        btn.disabled = false; btn.classList.remove("loading");
+        toast("That didn't work. Check your password, or the link may have expired.");
+      }
+    };
+    void goHome;
+  }
+
   // ------------------------------------------------------------------ public homepage
   function renderPublic() {
     const h = location.hash.replace(/^#\/?/, "");
     if (h === "login" || h === "register") return renderAuth(h);
-    if (h.startsWith("reset") || h.startsWith("verify")) return renderAuth("login");
+    const act = /^(verify|reset|email-change)\/([^/?#]+)/.exec(h);
+    if (act) return renderAction(act[1], decodeURIComponent(act[2]));
+    if (h.startsWith("reset") || h.startsWith("verify") || h.startsWith("email-change")) return renderAuth("login");
     return renderLanding();
   }
 
@@ -298,6 +410,8 @@
     // a re-render removes whatever was hovered, so drop any open tooltip with it
     const tip = $("#viz-tip"); if (tip) tip.style.opacity = 0;
     if (reloadIfPending()) return; // a newer version is waiting: load it instead of rendering old code
+    const act = /^#\/?(verify|reset|email-change)\/([^/?#]+)/.exec(location.hash);
+    if (act) return renderAction(act[1], decodeURIComponent(act[2]));
     if (!pb.authStore.isValid) return renderPublic();
     if (!$(".shell")) renderShell();
     const r = currentRoute();
