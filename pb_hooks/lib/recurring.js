@@ -65,8 +65,19 @@ function median(a) {
   return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
 }
 
+// A charge is a subscription when it's a known service, filed under Subscriptions,
+// or the categorizer's merchant directory says so (Fishbrain, Playit, ...).
+function isSubscription(key, cat, tx) {
+  if (SUBS.test(key)) return true;
+  if (cat && /subscription/i.test(cat.name)) return true;
+  try {
+    const m = require(`${__hooks}/lib/rules.js`).directoryMatch(tx.payee || tx.description, tx.amount);
+    return !!(m && m.name === "Subscriptions");
+  } catch (_) { return false; }
+}
+
 // ---- detection ----
-function analyze(group, today) {
+function analyze(group, today, isIncome) {
   // collapse same-day charges
   const byDay = {};
   for (const t of group) {
@@ -81,12 +92,13 @@ function analyze(group, today) {
   const fr = FREQS.find((x) => med >= x.min && med <= x.max);
   if (!fr) return null;
   const ok = intervals.filter((iv) => iv >= fr.min && iv <= fr.max).length;
-  if (ok / intervals.length < 0.7) return null;
+  // paychecks drift (holidays, hours worked), so income gets a looser rhythm and amount check
+  if (ok / intervals.length < (isIncome ? 0.6 : 0.7)) return null;
 
   const amounts = days.map((d) => Math.abs(byDay[d].reduce((s, t) => s + t.amount, 0)));
   const recent = amounts.slice(-4);
   const mx = Math.max.apply(null, recent), mn = Math.min.apply(null, recent);
-  if (mn < 0.5 || mx > mn * 2) return null;
+  if (mn < 0.5 || mx > mn * (isIncome ? 3 : 2)) return null;
   const exact = recent.every((a) => Math.abs(a - recent[0]) < 0.01);
   if (days.length < fr.need && !(exact && days.length >= 2 && fr.f === "monthly")) return null;
 
@@ -148,9 +160,9 @@ function detect(app, userId) {
   const col = app.findCollectionByNameOrId("recurring");
   let found = 0, updated = 0;
   for (const g in groups) {
-    const a = analyze(groups[g], today);
-    if (!a) continue;
     const [key, dir] = g.split("|");
+    const a = analyze(groups[g], today, dir === "in");
+    if (!a) continue;
     const cat = cats[a.tx.category];
     if (dir === "in" && cat && cat.kind !== "income") continue; // refunds etc.
     let r = existing[g];
@@ -162,6 +174,7 @@ function detect(app, userId) {
         if (r.getString("status") === "active") r.set("next_date", a.next_date + " 12:00:00.000Z");
       }
       if (!r.getBool("edited") && r.getString("source") !== "manual") {
+        if (dir === "out" && r.getString("kind") === "bill" && isSubscription(key, cat, a.tx)) r.set("kind", "subscription");
         r.set("amount", a.amount);
         r.set("frequency", a.frequency);
         if (a.tx.category) r.set("category", a.tx.category);
@@ -178,7 +191,7 @@ function detect(app, userId) {
     r.set("merchant_key", key);
     r.set("amount", a.amount);
     r.set("last_amount", a.last_amount);
-    r.set("kind", dir === "in" ? "income" : (SUBS.test(key) || (cat && /subscription/i.test(cat.name)) ? "subscription" : "bill"));
+    r.set("kind", dir === "in" ? "income" : isSubscription(key, cat, a.tx) ? "subscription" : "bill");
     r.set("frequency", a.frequency);
     r.set("last_date", a.last_date + " 12:00:00.000Z");
     r.set("next_date", a.next_date + " 12:00:00.000Z");
@@ -283,11 +296,26 @@ function list(app, userId, monthKey) {
   }
   upcoming.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   calendar.sort((a, b) => (a.date < b.date ? -1 : 1));
+  // No recurring income found: estimate from deposits filed as income over the last 3 full months,
+  // so the page can say "about $X/mo" instead of a confident $0.
+  let incomeEstimate = 0;
+  if (!totals.income) {
+    const cats = {};
+    for (const c of app.findRecordsByFilter("categories", "user = {:u}", "", 0, 0, { u: userId })) cats[c.id] = c.getString("kind");
+    const s3 = util.monthRange(util.shiftMonth(util.currentMonth(), -3)).start;
+    const e3 = util.monthRange(util.currentMonth()).start;
+    let sum = 0;
+    for (const t of app.findRecordsByFilter("transactions", "user = {:u} && exclude = false && amount > 0 && date >= {:s} && date < {:e}", "", 0, 0, { u: userId, s: s3, e: e3 })) {
+      if (cats[t.getString("category")] === "income") sum += t.getFloat("amount");
+    }
+    incomeEstimate = util.round2(sum / 3);
+  }
   const remaining = calendar.filter((c) => c.kind !== "income" && !c.paid && c.date >= today).reduce((s, c) => s + c.amount, 0);
   return {
     month: r.key, today, items, calendar, upcoming,
     totals: {
       subscriptions: util.round2(totals.subscription), bills: util.round2(totals.bill), income: util.round2(totals.income),
+      income_estimate: incomeEstimate,
       expenses: util.round2(totals.subscription + totals.bill),
       due_this_month: util.round2(dueThisMonth), paid_this_month: util.round2(paidThisMonth), remaining_this_month: util.round2(remaining),
     },

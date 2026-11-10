@@ -17,7 +17,10 @@ function compute(app, userId, monthKey) {
   );
 
   const months = {};
-  for (let i = 5; i >= 0; i--) months[util.shiftMonth(r.key, -i)] = { total: 0, cat: {} };
+  for (let i = 5; i >= 0; i--) months[util.shiftMonth(r.key, -i)] = { total: 0, cat: {}, toDate: 0 };
+  // pace: compare the current month with earlier months up to the same day of the month
+  const isCurrent = r.key === util.currentMonth();
+  const dayOfMonth = isCurrent ? Number(util.today().slice(8, 10)) : 31;
   const byCat = {}, byMerchant = {};
   let total = 0, count = 0, income = 0;
 
@@ -33,7 +36,10 @@ function compute(app, userId, monthKey) {
     }
     const key = c ? c.id : "";
     const mo = months[m];
-    if (mo) mo.cat[key] = (mo.cat[key] || 0) - amt;
+    if (mo) {
+      mo.cat[key] = (mo.cat[key] || 0) - amt;
+      if (Number(t.getString("date").slice(8, 10)) <= dayOfMonth) mo.toDate -= amt;
+    }
     if (m !== r.key) continue;
     const b = (byCat[key] = byCat[key] || { id: key, total: 0, count: 0 });
     b.total -= amt;
@@ -67,10 +73,13 @@ function compute(app, userId, monthKey) {
   });
   const prior = trend.slice(0, -1).filter((x) => x.total > 0);
   const avg = prior.length ? prior.reduce((s, x) => s + x.total, 0) / prior.length : 0;
+  const priorKeys = prior.map((x) => x.month);
+  const avgToDate = priorKeys.length ? priorKeys.reduce((s, k) => s + Math.max(0, months[k].toDate), 0) / priorKeys.length : 0;
 
   return {
     month: r.key, total: util.round2(total), income: util.round2(income), transactions: count,
-    average: util.round2(avg), categories, merchants, trend,
+    average: util.round2(avg), average_to_date: util.round2(avgToDate), is_current: isCurrent, day: dayOfMonth,
+    months_compared: priorKeys.length, categories, merchants, trend,
   };
 }
 

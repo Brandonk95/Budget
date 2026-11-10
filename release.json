@@ -1,5 +1,5 @@
 {
-  "version": "2.5.0",
-  "released": "2026-11-09",
-  "motd": "Keel now knows Utah: Maverik, Smith's, Macey's, Lee's, Harmons, Swig, Fiiz, Cafe Rio, Rocky Mountain Power, Lagoon, Snowbasin and hundreds more, with extra Ogden, Brigham City and Logan spots. ATM withdrawals now go to a new Cash & ATM category."
+  "version": "2.6.0",
+  "released": "2026-11-10",
+  "motd": "A clearer Keel: Spending now compares you with your usual pace for this point in the month, every category keeps one icon and color everywhere, Subscriptions moved into Recurring, paychecks are easier to detect, and budgets that look too low get flagged. There's also a new homepage for signed-out visitors."
 }
