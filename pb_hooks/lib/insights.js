@@ -21,14 +21,15 @@ function compute(app, userId, monthKey) {
   const catById = {};
   for (const c of cats) catById[c.id] = c;
 
-  const txs = app.findRecordsByFilter(
+  // split transactions count as their parts
+  const txs = require(`${__hooks}/lib/splits.js`).expand(app, userId, app.findRecordsByFilter(
     "transactions",
     "user = {:u} && account.on_budget = true && exclude = false && date >= {:s} && date < {:e}",
     "date", 0, 0, { u: userId, s: histStart, e: r.end },
   ).map((t) => ({
     id: t.id, date: t.getString("date"), amount: t.getFloat("amount"), category: t.getString("category"),
-    description: t.getString("description"), payee: t.getString("payee"),
-  }));
+    description: t.getString("description"), payee: t.getString("payee"), split: t.getBool("split"),
+  })), histStart, r.end);
 
   // per month, per category net amounts
   const byMonth = {}; // month -> { income, spend, cat: {id: net}, uncat }

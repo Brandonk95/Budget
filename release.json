@@ -1,5 +1,5 @@
 {
-  "version": "2.10.1",
+  "version": "2.11.0",
   "released": "2026-11-10",
-  "motd": "Account emails (confirm your email, password reset) now match the rest of Keel's emails, and their links open proper pages in Keel instead of a bare confirmation screen."
+  "motd": "Split a transaction across categories: open it on the Transactions page and tap Split, for a store run that was part groceries, part household. Excluding a transaction from your budget is clearer too, and the Spending page shows what you've left out."
 }

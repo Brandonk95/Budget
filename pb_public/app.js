@@ -666,7 +666,7 @@
     return `<div class="tx-line click" data-id="${t.id}">
       ${avatar(t.payee || t.description, c)}
       <div class="grow"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
-        <div class="small muted">${esc(c ? c.name : "Uncategorized")}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
+        <div class="small muted">${t.split ? `Split · ${esc(c ? c.name : "Uncategorized")} and more` : esc(c ? c.name : "Uncategorized")}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
       <div class="right"><div class="num ${t.amount > 0 ? "pos" : ""}">${t.amount > 0 ? "+" : ""}${money(t.amount)}</div><div class="small muted">${prettyDate(t.date)}</div></div>
     </div>`;
   }
@@ -817,6 +817,7 @@
             ${s.categories.length ? `<div class="donut-wrap">${donut(items, s.total, "spent")}
               <div class="d-legend">${items.map((it) => `<button class="d-item" ${it.id != null ? `data-cat="${it.id}"` : "disabled"}>${catMark(it.cat, true)}<span class="grow">${esc(it.label)}</span><span class="num">${money(it.value)}</span><span class="num muted small">${s.total ? Math.round((it.value / s.total) * 100) : 0}%</span></button>`).join("")}</div></div>`
               : `<div class="empty">No spending in ${esc(monthLabel(state.month))}.</div>`}
+            ${s.excluded && s.excluded.count ? `<div class="row small muted ex-note"><span>${plural(s.excluded.count, "transaction")} (${money(Math.abs(s.excluded.total))}) not counted because you excluded ${s.excluded.count === 1 ? "it" : "them"}</span><div class="spacer"></div><a href="#/transactions?excluded=1">View</a></div>` : ""}
           </div>
           <div class="card">
             <div class="card-h"><h2>Top merchants</h2></div>
@@ -1156,12 +1157,13 @@
   async function renderTransactions(view) {
     await Promise.all([loadCategories(), loadAccounts()]);
     if (/uncat=1/.test(location.hash)) { txState.category = "__none"; history.replaceState(null, "", "#/transactions"); }
+    if (/excluded=1/.test(location.hash)) { txState.category = "__excluded"; history.replaceState(null, "", "#/transactions"); }
     view.innerHTML = `
       <div class="card">
         <div class="row" style="margin-bottom:14px">
           <input id="tq" placeholder="Search description or payee…" value="${esc(txState.q)}" style="max-width:260px">
           <select id="tacc" class="inline">${accountOptions(txState.account, true)}</select>
-          <select id="tcat" class="inline"><option value="">All categories</option><option value="__none" ${txState.category === "__none" ? "selected" : ""}>Uncategorized</option>${categoryOptions(txState.category, { includeNone: false })}</select>
+          <select id="tcat" class="inline"><option value="">All categories</option><option value="__none" ${txState.category === "__none" ? "selected" : ""}>Uncategorized</option><option value="__split" ${txState.category === "__split" ? "selected" : ""}>Split</option><option value="__excluded" ${txState.category === "__excluded" ? "selected" : ""}>Excluded from budget</option>${categoryOptions(txState.category, { includeNone: false })}</select>
           <div class="spacer"></div>
           <button class="btn" id="apply-rules" title="Run your rules on uncategorized transactions">Apply rules</button>
           <button class="btn primary" id="add-tx">+ Add</button>
@@ -1187,7 +1189,10 @@
     if (txState.q) { parts.push("(description ~ {:q} || payee ~ {:q} || notes ~ {:q})"); params.q = txState.q; }
     if (txState.account) { parts.push("account = {:a}"); params.a = txState.account; }
     if (txState.category === "__none") parts.push("category = ''");
-    else if (txState.category) { parts.push("category = {:c}"); params.c = txState.category; }
+    else if (txState.category === "__split") parts.push("split = true");
+    else if (txState.category === "__excluded") parts.push("exclude = true");
+    // a split transaction shows up under every category it has a part in
+    else if (txState.category) { parts.push("(category = {:c} || tx_splits_via_transaction.category ?= {:c})"); params.c = txState.category; }
     const res = await pb.collection("transactions").getList(txState.page, 100, { filter: pb.filter(parts.join(" && "), params), sort: "-date,-created" });
     if (!res.items.length) {
       box.innerHTML = `<div class="empty">No transactions for ${esc(monthLabel(state.month))}${state.accounts.length ? "" : ` — <a href="#/accounts">connect a bank or import a CSV</a>`}.</div>`;
@@ -1270,9 +1275,10 @@
         <label class="field"><span>Account</span><select name="account" ${isNew ? "" : "disabled"}>${accountOptions(tx.account)}</select></label>
         <label class="field"><span>Description</span><input name="description" value="${esc(tx.description)}" ${manual ? "" : "disabled"}></label>
         <label class="field"><span>Payee</span><input name="payee" value="${esc(tx.payee)}"></label>
-        <label class="field"><span>Category</span><select name="category">${categoryOptions(tx.category)}</select></label>
+        ${tx.split ? `<div class="field"><span>Category</span><div id="tx-parts" class="tx-parts"><span class="muted small loading-dots">Loading split</span></div></div>`
+          : `<div class="field"><span>Category</span><div class="row" style="flex-wrap:nowrap"><select name="category" class="grow">${categoryOptions(tx.category)}</select>${!isNew ? `<button type="button" class="btn" id="split-btn" title="Divide this across categories">Split</button>` : ""}</div></div>`}
         <label class="field"><span>Notes</span><textarea name="notes" rows="2">${esc(tx.notes)}</textarea></label>
-        <label class="check"><input type="checkbox" name="exclude" ${tx.exclude ? "checked" : ""}> Exclude from budget and spending (reimbursements, one-off moves)</label>
+        <label class="check ex-check"><input type="checkbox" name="exclude" ${tx.exclude ? "checked" : ""}><span><b>Don't count this in my budget or spending</b><span class="small muted">For transfers between your accounts, reimbursements you'll be paid back, or one-off purchases you don't want skewing your numbers. It still counts toward your balances.</span></span></label>
         <div class="actions">
           ${!isNew ? `<button type="button" class="btn danger" id="del">Delete</button><button type="button" class="btn" id="mkrule">Make rule</button><div class="spacer"></div>` : ""}
           <button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button>
@@ -1283,7 +1289,8 @@
         form.onsubmit = async (e) => {
           e.preventDefault();
           const fd = Object.fromEntries(new FormData(form));
-          const data = { payee: fd.payee, category: fd.category, notes: fd.notes, exclude: !!fd.exclude };
+          const data = { payee: fd.payee, notes: fd.notes, exclude: !!fd.exclude };
+          if (!tx.split) data.category = fd.category;
           if (manual) Object.assign(data, { date: fd.date + " 12:00:00.000Z", amount: Number(fd.amount), description: fd.description });
           try {
             if (isNew) await pb.collection("transactions").create({ ...data, user: pb.authStore.record.id, account: fd.account });
@@ -1300,7 +1307,101 @@
           try { await pb.collection("transactions").delete(tx.id); toast("Deleted"); loadTx(); } catch (err) { fail(err); }
         };
         const mk = $("#mkrule", m);
-        if (mk) mk.onclick = () => { const cat = $("[name=category]", form).value; close(); createRuleDialog(suggestPattern(tx), cat); };
+        if (mk) mk.onclick = () => { const sel = $("[name=category]", form); close(); createRuleDialog(suggestPattern(tx), sel ? sel.value : tx.category); };
+        const sb = $("#split-btn", m);
+        if (sb) sb.onclick = () => { const cat = $("[name=category]", form).value; close(); editSplit(tx, null, cat); };
+        const box = $("#tx-parts", m);
+        if (box) pb.collection("tx_splits").getFullList({ filter: pb.filter("transaction = {:t}", { t: tx.id }), sort: "position" }).then((parts) => {
+          box.innerHTML = `${parts.map((x) => { const c = catById(x.category); return `<div class="tx-part">${catMark(c, true)}<span class="grow">${esc(c ? c.name : "Uncategorized")}${x.note ? ` <span class="muted small">· ${esc(x.note)}</span>` : ""}</span><span class="num">${money(Math.abs(x.amount))}</span></div>`; }).join("")}
+            <div class="row" style="margin-top:8px"><button type="button" class="btn sm" id="split-edit">Edit split</button><button type="button" class="btn sm" id="split-undo">Undo split</button></div>`;
+          $("#split-edit", box).onclick = () => { close(); editSplit(tx, parts); };
+          $("#split-undo", box).onclick = async () => {
+            try { await api(`/api/budget/transactions/${tx.id}/split`, { method: "POST", body: { parts: [] } }); close(); toast("Split removed"); if (currentRoute() === "transactions") loadTx(); else route(); } catch (err) { fail(err); }
+          };
+        }).catch(() => { box.innerHTML = `<span class="muted small">Couldn't load the split.</span>`; });
+      },
+    });
+  }
+
+  // Divide one transaction across categories. The first row takes whatever the others don't,
+  // until you type in it yourself; Save only works once the parts add up.
+  function editSplit(tx, parts, firstCat) {
+    const total = Math.round(Math.abs(tx.amount) * 100) / 100;
+    let rows = parts && parts.length ? parts.map((x) => ({ category: x.category, amount: Math.abs(x.amount), note: x.note || "" }))
+      : [{ category: firstCat || tx.category || "", amount: total, note: "" }, { category: "", amount: "", note: "" }];
+    let firstTouched = !!(parts && parts.length);
+    const name = tx.payee || tx.description || "Transaction";
+    const rowHtml = (r, i) => `<div class="sp-row" data-i="${i}">
+        <select class="sp-cat" aria-label="Category for part ${i + 1}">${categoryOptions(r.category)}</select>
+        <input class="sp-amt num" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" aria-label="Amount for part ${i + 1}" value="${r.amount === "" ? "" : r.amount}">
+        <button type="button" class="btn sm icon-btn sp-del" aria-label="Remove part ${i + 1}" ${rows.length <= 2 ? "disabled" : ""}>×</button>
+        <input class="sp-note" placeholder="Note (optional)" aria-label="Note for part ${i + 1}" value="${esc(r.note)}" maxlength="200">
+      </div>`;
+    modal("Split transaction", `
+      <div class="sp-head"><div class="grow"><b>${esc(name)}</b><div class="small muted">${esc(prettyDate(tx.date))} ${dateOnly(tx.date).slice(0, 4)}</div></div><div class="num sp-total">${money(total)}</div></div>
+      ${tx.pending ? `<div class="callout small" style="margin-bottom:12px">This charge is still pending. Banks sometimes give it a new ID when it posts, which would drop the split, so it's safest to split it after it posts.</div>` : ""}
+      <form id="sp-form" class="stack">
+        <div id="sp-rows"></div>
+        <div class="row"><button type="button" class="btn sm" id="sp-add">+ Add a part</button><button type="button" class="btn sm" id="sp-even">Split evenly</button><div class="spacer"></div><span id="sp-left" class="small" aria-live="polite"></span></div>
+        <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="sp-save">Save split</button></div>
+      </form>`, {
+      onMount: (m, close) => {
+        const box = $("#sp-rows", m);
+        const cents = (v) => Math.round((Number(v) || 0) * 100);
+        const sync = () => {
+          const used = rows.reduce((s2, r) => s2 + cents(r.amount), 0);
+          const left = cents(total) - used;
+          const el = $("#sp-left", m);
+          const filled = rows.filter((r) => cents(r.amount) > 0).length;
+          el.className = "small " + (left === 0 ? "pos" : "negc");
+          el.textContent = left === 0 ? (filled >= 2 ? "Adds up" : "Give at least two parts an amount") : left > 0 ? `${money(left / 100)} left to assign` : `${money(-left / 100)} too much`;
+          if (left === 0 && filled < 2) el.className = "small muted";
+          $("#sp-save", m).disabled = left !== 0 || filled < 2;
+        };
+        const draw = () => {
+          box.innerHTML = rows.map(rowHtml).join("");
+          $$(".sp-row", box).forEach((el) => {
+            const i = +el.dataset.i;
+            $(".sp-cat", el).onchange = (e) => { rows[i].category = e.target.value; };
+            $(".sp-note", el).oninput = (e) => { rows[i].note = e.target.value; };
+            $(".sp-amt", el).oninput = (e) => {
+              rows[i].amount = e.target.value;
+              if (i === 0) firstTouched = true;
+              else if (!firstTouched) {
+                // the first row absorbs the rest
+                const others = rows.slice(1).reduce((s2, r) => s2 + cents(r.amount), 0);
+                rows[0].amount = Math.max(0, cents(total) - others) / 100;
+                $(".sp-row[data-i='0'] .sp-amt", box).value = rows[0].amount;
+              }
+              sync();
+            };
+            $(".sp-del", el).onclick = () => { rows.splice(i, 1); draw(); };
+          });
+          sync();
+        };
+        $("#sp-add", m).onclick = () => {
+          const used = rows.reduce((s2, r) => s2 + cents(r.amount), 0);
+          const left = Math.max(0, cents(total) - used);
+          rows.push({ category: "", amount: left ? left / 100 : "", note: "" });
+          draw();
+          const last = $$(".sp-row", box).pop(); if (last) $(".sp-cat", last).focus();
+        };
+        $("#sp-even", m).onclick = () => {
+          const n = rows.length, each = Math.floor(cents(total) / n);
+          rows.forEach((r, i) => { r.amount = (each + (i === 0 ? cents(total) - each * n : 0)) / 100; });
+          firstTouched = true;
+          draw();
+        };
+        $("#sp-form", m).onsubmit = async (e) => {
+          e.preventDefault();
+          try {
+            await api(`/api/budget/transactions/${tx.id}/split`, { method: "POST", body: { parts: rows.map((r) => ({ category: r.category, amount: Number(r.amount) || 0, note: r.note })) } });
+            close(); toast("Split saved");
+            if (currentRoute() === "transactions") loadTx(); else route();
+          } catch (err) { fail(err); }
+        };
+        draw();
+        const second = $(".sp-row[data-i='1'] .sp-cat", box); if (second) second.focus();
       },
     });
   }

@@ -73,7 +73,7 @@ onRecordCreateRequest((e) => {
     try { r = e.app.findRecordById(col, id); } catch (_) { throw new BadRequestError("Invalid " + col + " reference."); }
     if (r.getString("user") !== uid) throw new ForbiddenError("That " + col.replace(/s$/, "") + " isn't yours.");
   };
-  if (name === "transactions") { owned("accounts", rec.getString("account")); owned("categories", rec.getString("category")); }
+  if (name === "transactions") { owned("accounts", rec.getString("account")); owned("categories", rec.getString("category")); rec.set("split", false); }
   if (name === "rules") owned("categories", rec.getString("category"));
   if (name === "accounts") { rec.set("connection", ""); rec.set("external_id", ""); }
   if (name === "recurring") {
@@ -101,6 +101,9 @@ onRecordUpdateRequest((e) => {
   let learn = false;
   if (name === "transactions") {
     owned("accounts", rec.getString("account")); owned("categories", rec.getString("category"));
+    // split is only changed through /split; a split transaction's category follows its parts
+    rec.set("split", rec.original().getBool("split"));
+    if (rec.getBool("split")) rec.set("category", rec.original().getString("category"));
     // a category picked by hand teaches Keel about that merchant
     if (rec.getString("category") !== rec.original().getString("category")) {
       rec.set("cat_manual", !!rec.getString("category"));
@@ -251,6 +254,12 @@ routerAdd("GET", "/api/budget/recurring/{id}/history", (e) => {
 routerAdd("POST", "/api/budget/recurring/detect", (e) => {
   const recurring = require(`${__hooks}/lib/recurring.js`);
   return e.json(200, recurring.detect(e.app, e.auth.id));
+}, $apis.requireAuth("users"));
+
+routerAdd("POST", "/api/budget/transactions/{id}/split", (e) => {
+  const splits = require(`${__hooks}/lib/splits.js`);
+  const body = e.requestInfo().body || {};
+  return e.json(200, splits.save(e.app, e.auth.id, e.request.pathValue("id"), body.parts || []));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/forecast", (e) => {

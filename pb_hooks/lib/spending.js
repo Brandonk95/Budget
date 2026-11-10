@@ -10,11 +10,21 @@ function compute(app, userId, monthKey) {
   for (const c of app.findRecordsByFilter("categories", "user = {:u}", "", 0, 0, { u: userId })) {
     cats[c.id] = { id: c.id, name: c.getString("name"), kind: c.getString("kind"), icon: c.getString("icon") };
   }
-  const txs = app.findRecordsByFilter(
+  // split transactions count as their parts
+  const txs = require(`${__hooks}/lib/splits.js`).expand(app, userId, app.findRecordsByFilter(
     "transactions",
     "user = {:u} && account.on_budget = true && exclude = false && date >= {:s} && date < {:e}",
     "date", 0, 0, { u: userId, s: histStart, e: r.end },
-  );
+  ).map((t) => ({
+    id: t.id, date: t.getString("date"), amount: t.getFloat("amount"), category: t.getString("category"),
+    payee: t.getString("payee"), description: t.getString("description"), split: t.getBool("split"),
+  })), histStart, r.end);
+  // what was left out this month with "Exclude from budget"
+  let excludedTotal = 0, excludedCount = 0;
+  for (const t of app.findRecordsByFilter("transactions", "user = {:u} && account.on_budget = true && exclude = true && date >= {:s} && date < {:e}", "", 0, 0, { u: userId, s: r.start, e: r.end })) {
+    excludedCount++;
+    excludedTotal += t.getFloat("amount");
+  }
 
   const months = {};
   for (let i = 5; i >= 0; i--) months[util.shiftMonth(r.key, -i)] = { total: 0, cat: {}, toDate: 0 };
@@ -25,11 +35,11 @@ function compute(app, userId, monthKey) {
   let total = 0, count = 0, income = 0;
 
   for (const t of txs) {
-    const amt = t.getFloat("amount");
-    const cid = t.getString("category");
+    const amt = t.amount;
+    const cid = t.category;
     const c = cats[cid];
     if (c && c.kind === "transfer") continue;
-    const m = t.getString("date").slice(0, 7);
+    const m = t.date.slice(0, 7);
     if ((c && c.kind === "income") || (!c && amt > 0)) {
       if (m === r.key) income += amt;
       continue;
@@ -38,19 +48,19 @@ function compute(app, userId, monthKey) {
     const mo = months[m];
     if (mo) {
       mo.cat[key] = (mo.cat[key] || 0) - amt;
-      if (Number(t.getString("date").slice(8, 10)) <= dayOfMonth) mo.toDate -= amt;
+      if (Number(t.date.slice(8, 10)) <= dayOfMonth) mo.toDate -= amt;
     }
     if (m !== r.key) continue;
     const b = (byCat[key] = byCat[key] || { id: key, total: 0, count: 0 });
     b.total -= amt;
     b.count++;
     if (amt < 0) {
-      const name = t.getString("payee") || t.getString("description");
+      const name = t.payee || t.description;
       const mk = recurring.normalizePayee(name) || name.toLowerCase();
       const x = (byMerchant[mk] = byMerchant[mk] || { name, total: 0, count: 0, category: key });
       x.total -= amt;
-      x.count++;
-      count++;
+      // a split purchase is still one purchase
+      if (!t.part) { x.count++; count++; }
     }
   }
 
@@ -80,6 +90,7 @@ function compute(app, userId, monthKey) {
     month: r.key, total: util.round2(total), income: util.round2(income), transactions: count,
     average: util.round2(avg), average_to_date: util.round2(avgToDate), is_current: isCurrent, day: dayOfMonth,
     months_compared: priorKeys.length, categories, merchants, trend,
+    excluded: { count: excludedCount, total: util.round2(excludedTotal) },
   };
 }
 
