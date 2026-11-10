@@ -295,6 +295,7 @@
   async function route() {
     // a re-render removes whatever was hovered, so drop any open tooltip with it
     const tip = $("#viz-tip"); if (tip) tip.style.opacity = 0;
+    if (reloadIfPending()) return; // a newer version is waiting: load it instead of rendering old code
     if (!pb.authStore.isValid) return renderPublic();
     if (!$(".shell")) renderShell();
     const r = currentRoute();
@@ -1870,7 +1871,14 @@
   // ------------------------------------------------------------------ update notes
   // The server is auto-updated (Watchtower). We show a small "what's new" card when
   // the running version differs from the last one this user acknowledged.
-  const loadedVersion = { v: "" };
+  // v = the version this page's code came from; pending = the server has a newer one.
+  // state.status.version keeps showing the code that's actually running until we reload.
+  const loadedVersion = { v: "", pending: false };
+  const reloadIfPending = () => {
+    if (!loadedVersion.pending || $(".modal-bg")) return false;
+    location.reload();
+    return true;
+  };
 
   function notesEnabled() {
     const me = pb.authStore.isValid && pb.authStore.record;
@@ -1927,11 +1935,18 @@
     let s;
     try { s = await api("/api/budget/status"); } catch (_) { return; } // server restarting mid-update
     if (!s.version || s.version === loadedVersion.v) return;
-    state.status = s;
     loadedVersion.v = s.version;
+    loadedVersion.pending = true;
+    // hidden (backgrounded, other tab): switch over quietly. Otherwise the next page change does it.
+    if (document.hidden) return void location.reload();
     if (notesEnabled()) showUpdate(s, true);
-    else if (document.hidden) location.reload(); // pick up the new UI quietly
   }
+  // Phones keep an installed app alive in the background for days: check again on resume,
+  // and use the moment the app goes to the background to load a pending update.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (loadedVersion.pending) location.reload(); }
+    else if (pb.authStore.isValid) pollVersion();
+  });
 
   // ------------------------------------------------------------------ install (PWA)
   // Android/desktop Chrome and Edge fire `beforeinstallprompt`; iOS needs Share > Add to Home Screen.
