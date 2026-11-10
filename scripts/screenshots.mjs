@@ -56,12 +56,12 @@ const SHOTS = {
     S("13-goals", "#/goals"),
     S("14-goal-detail", "#/goals", openGoal("House down payment")),
     S("15-split", "#/transactions", `const s = document.querySelector('#tcat'); s.value = '__split'; s.onchange({ target: s }); await sleep(1200);
-      document.querySelector('.tx-line').click(); await sleep(700); document.querySelector('#split-edit').click(); await sleep(800);`),
+      document.querySelector('.tx-row').click(); await sleep(700); document.querySelector('#split-edit').click(); await sleep(800);`),
     S("16-settings", "#/settings"),
   ],
 };
 const DARK = ["03-overview", "06-spending", "10-cash-flow", "14-goal-detail"];
-const PHONE_SKIP = ["12-accounts", "16-settings"];
+const PHONE_SKIP = [];
 
 // ---- tiny CDP client
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -127,8 +127,10 @@ async function shoot(kind, theme, shot) {
   console.log("saved", kind, theme, shot.name);
 }
 
+// ONLY=03-overview,06-spending re-shoots just those pages
+const ONLY = (process.env.ONLY || "").split(",").filter(Boolean);
 async function run(kind, theme, list) {
-  for (const shot of list) {
+  for (const shot of list.filter((s) => !ONLY.length || ONLY.includes(s.name))) {
     try { await shoot(kind, theme, shot); } catch (err) { console.log("FAILED", kind, theme, shot.name, err.message); }
   }
 }

@@ -20,6 +20,16 @@
   const monthBounds = (m) => ({ start: `${m}-01 00:00:00.000Z`, end: `${shiftMonth(m, 1)}-01 00:00:00.000Z` });
   const dateOnly = (s) => (s || "").slice(0, 10);
   const prettyDate = (s) => { if (!s) return ""; const [y, m, d] = dateOnly(s).split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
+  // ---- theme: System (default), Light or Dark, kept on this device
+  const THEME_KEY = "keel.theme";
+  const getTheme = () => { try { return localStorage.getItem(THEME_KEY) || "system"; } catch (_) { return "system"; } };
+  function applyTheme(t) {
+    const root = document.documentElement;
+    if (t === "light" || t === "dark") root.dataset.theme = t; else delete root.dataset.theme;
+    const dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    $$('meta[name="theme-color"]').forEach((m) => { if (t === "system") return; m.removeAttribute("media"); m.content = dark ? "#101827" : "#f5f7fa"; });
+  }
+  applyTheme(getTheme());
   const KINDS = { income: "Income", needs: "Needs", wants: "Wants", savings: "Savings", transfer: "Transfers (not budgeted)" };
   const ACCOUNT_TYPES = ["checking", "savings", "credit", "investment", "loan", "cash", "other"];
 
@@ -61,7 +71,8 @@
 
   function confirmBox(text, okLabel = "Delete") {
     return new Promise((resolve) => {
-      modal("Are you sure?", `<p>${esc(text)}</p><div class="actions"><button class="btn" data-close>Cancel</button><button class="btn primary" id="ok">${esc(okLabel)}</button></div>`, {
+      const destructive = /delete|remove|disconnect/i.test(okLabel);
+      modal("Are you sure?", `<p>${esc(text)}</p><div class="actions"><button class="btn" data-close>Cancel</button><button class="btn ${destructive ? "danger solid" : "primary"}" id="ok">${esc(okLabel)}</button></div>`, {
         onMount: (m, close) => { $("#ok", m).onclick = () => { close(); resolve(true); }; },
       });
     });
@@ -308,7 +319,9 @@
         <circle cx="${px(11, 14)}" cy="${py(214)}" r="5" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/></svg>
       <div class="lp-rows">
         ${[["Groceries", 412.18, 500], ["Dining Out", 168.4, 200], ["Transportation", 96.25, 180]].map(([n, v, b]) => `<div class="cat-row"><div>${catLabel({ name: n })}</div><div class="num">${money(v)} <span class="muted">/ ${money(b)}</span></div><div class="bar"><i style="width:${(v / b) * 100}%;background:${catColor({ name: n })}"></i></div></div>`).join("")}
-      </div></div>`;
+      </div>
+      <div class="lp-cf"><div><div class="label">Lowest balance, next 30 days</div><div class="num lp-cf-v">$842.10 <span class="small muted">on Nov 21, before payday</span></div></div><div class="spacer"></div>${sparkline([2400, 2210, 1980, 1620, 1290, 980, 842, 2650, 2480, 2300, 2120])}</div>
+      </div>`;
     $("#app").innerHTML = `
       <div class="lp">
         <header class="lp-nav">
@@ -395,7 +408,7 @@
     const r = currentRoute();
     const root = $("#modal-root");
     root.innerHTML = `<div class="modal-bg sheet-bg"><div class="modal sheet" role="dialog" aria-modal="true" aria-label="More pages">
-      <nav class="sheet-nav">${Object.keys(ROUTES).filter((k) => !ROUTES[k].main && !ROUTES[k].hidden).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}">${icon(k)}${ROUTES[k].title}</a>`).join("")}</nav>
+      <nav class="sheet-nav">${[["Plan", ["recurring", "cashflow", "goals"]], ["Money", ["networth", "accounts"]], ["You", ["settings"]]].map(([h, ks]) => `<div class="sheet-h">${h}</div>${ks.filter((k) => ROUTES[k]).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}">${icon(k)}${ROUTES[k].title}</a>`).join("")}`).join("")}</nav>
       <div class="foot">${esc(pb.authStore.record.email)} · Keel v${esc(state.status.version || "")}</div></div></div>`;
     const bg = $(".modal-bg", root);
     const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
@@ -405,6 +418,9 @@
     $$("a", root).forEach((a) => a.addEventListener("click", close));
     const first = $("a", root); if (first) first.focus();
   }
+
+  const skCard = (body) => `<div class="sk">${body}</div>`;
+  const SKELETON = `<div class="sk-page" aria-busy="true" aria-label="Loading"><div class="sk-row">${skCard('<i class="s"></i><i class="h"></i><i></i>').repeat(3)}</div>${skCard('<i class="s"></i><i class="t"></i>')}${skCard('<i></i><i></i><i class="s"></i>')}</div>`;
 
   async function route() {
     // a re-render removes whatever was hovered, so drop any open tooltip with it
@@ -423,8 +439,11 @@
     $("#month-picker").classList.toggle("hidden", !def.month);
     $("#mlabel").textContent = monthLabel(state.month);
     const view = $("#view");
-    view.innerHTML = `<div class="empty"><span class="loading-dots">Loading</span></div>`;
-    try { await def.render(view); } catch (err) { fail(err); view.innerHTML = `<div class="empty">Couldn't load this page: ${esc(errText(err))}</div>`; }
+    const moved = view.dataset.r !== r;
+    view.dataset.r = r;
+    if (moved) { view.classList.remove("enter"); view.innerHTML = SKELETON; window.scrollTo(0, 0); }
+    try { await def.render(view); } catch (err) { fail(err); view.innerHTML = `<div class="card empty"><b>Couldn't load this page.</b><p class="small">${esc(errText(err))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`; }
+    if (moved) { void view.offsetWidth; view.classList.add("enter"); }
   }
 
   // ------------------------------------------------------------------ charts
@@ -490,7 +509,8 @@
   let chartSeq = 0;
   // yMax caps the scale (lines above it are clipped; tooltips still show real values).
   // refs = [{ v, label }] draws dashed reference lines, e.g. the budget.
-  function lineChart({ series, n, xLabel, tipFor, height = 220, yMinZero = true, ariaLabel, yMax = null, refs = [] }) {
+  // marks = [{ i, v, label, cls }] pins a labelled dot on a point, e.g. the lowest balance.
+  function lineChart({ series, n, xLabel, tipFor, height = 220, yMinZero = true, ariaLabel, yMax = null, refs = [], marks = [] }) {
     const W = 640, H = height, L = 52, R = 14, T = 12, B = 26;
     const all = series.flatMap((s) => s.values.filter((v) => v != null)).concat(refs.map((r) => r.v));
     const lo = yMinZero ? Math.min(0, ...all) : Math.min(...all), hi = yMax != null ? Math.max(1, yMax) : Math.max(1, ...all);
@@ -524,6 +544,12 @@
       if (s.endDot) { const p = pts[pts.length - 1]; paths += `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`; }
       paths += `<circle class="xh-dot" data-s="${si}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2" cx="-10" cy="-10"/>`;
     });
+    for (const mk of marks) {
+      const mx = x(mk.i), my = y(mk.v);
+      const below = my < T + 30;
+      const anchor = mx < L + 40 ? "start" : mx > W - R - 40 ? "end" : "middle";
+      paths += `<circle class="mk-pt ${mk.cls || ""}" cx="${mx}" cy="${my}" r="6"/><text class="mk-l ${mk.cls || ""}" x="${mx}" y="${below ? my + 20 : my - 12}" text-anchor="${anchor}">${esc(mk.label)}</text>`;
+    }
     const cw = n <= 1 ? W - L - R : (W - L - R) / (n - 1);
     let hits = "";
     for (let i = 0; i < n; i++) {
@@ -536,10 +562,10 @@
   function donut(items, total, centerLabel) {
     const R = 72, SW = 22, C = 2 * Math.PI * R, GAP = items.length > 1 ? 2 : 0;
     let off = 0, segs = "";
-    items.forEach((it) => {
+    items.forEach((it, i) => {
       const len = total ? (it.value / total) * C : 0;
       const dash = Math.max(0.5, len - GAP);
-      segs += `<circle r="${R}" cx="100" cy="100" fill="none" stroke="${it.color}" stroke-width="${SW}" stroke-dasharray="${dash} ${C - dash}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)" ${tipAttr(`<b>${esc(it.label)}</b><br>${money(it.value)} · ${total ? Math.round((it.value / total) * 100) : 0}%`)}/>`;
+      segs += `<circle class="d-seg ${it.id != null ? "click" : ""}" data-i="${i}" r="${R}" cx="100" cy="100" fill="none" stroke="${it.color}" stroke-width="${SW}" stroke-dasharray="${dash} ${C - dash}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)" ${tipAttr(`<b>${esc(it.label)}</b><br>${money(it.value)} · ${total ? Math.round((it.value / total) * 100) : 0}%`)}/>`;
       off += len;
     });
     if (!items.length) segs = `<circle r="${R}" cx="100" cy="100" fill="none" stroke="var(--track)" stroke-width="${SW}"/>`;
@@ -678,41 +704,54 @@
       ${avatar(t.payee || t.description, c)}
       <div class="grow"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
         <div class="small muted">${t.split ? `Split · ${esc(c ? c.name : "Uncategorized")} and more` : esc(c ? c.name : "Uncategorized")}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
-      <div class="right"><div class="num ${t.amount > 0 ? "pos" : ""}">${t.amount > 0 ? "+" : ""}${money(t.amount)}</div><div class="small muted">${prettyDate(t.date)}</div></div>
+      <div class="right"><div class="num ${t.amount > 0 ? "pos" : ""}">${t.amount > 0 ? "+" : "−"}${money(Math.abs(t.amount))}</div><div class="small muted">${prettyDate(t.date)}</div></div>
     </div>`;
   }
 
+  // Upcoming bill with its date up front and urgency you can see without reading
+  function dueLine(u, href = "#/recurring") {
+    const [, m, dd] = dateOnly(u.date).split("-").map(Number);
+    const mon = new Date(2000, m - 1, 1).toLocaleDateString(undefined, { month: "short" });
+    const urgent = u.days_until <= 1, soon = u.days_until <= 3;
+    const when = urgent || soon ? `<span class="pill ${urgent ? "warn-p" : ""}">${esc(dueText(u.days_until))}</span>` : `<span class="small muted">${esc(dueText(u.days_until))}</span>`;
+    return `<a class="bill-line due-line" href="${href}"><span class="due-d${urgent ? " soon" : ""}" aria-hidden="true"><b>${dd}</b><span>${esc(mon)}</span></span>
+      <div class="grow"><div class="t-name">${esc(u.name)}</div><div>${when}</div></div><div class="num ${u.kind === "income" ? "pos" : ""}">${u.kind === "income" ? "+" : ""}${money(u.amount)}</div></a>`;
+  }
+
   // ------------------------------------------------------------------ dashboard
+  // Answers three things first: how am I doing (Left to spend + status), what needs me (attention list),
+  // what's coming (upcoming bills). Everything else supports those.
   async function renderDashboard(view) {
     const b = monthBounds(state.month);
     const [d, rec, nw, recent, goals, cf] = await Promise.all([
       api("/api/budget/insights", { query: { month: state.month } }),
       api("/api/budget/recurring", { query: { month: state.month } }),
       api("/api/budget/networth", { query: { days: 30 } }),
-      pb.collection("transactions").getList(1, 7, { sort: "-date,-created", filter: pb.filter("date < {:e}", { e: b.end }) }),
+      pb.collection("transactions").getList(1, 6, { sort: "-date,-created", filter: pb.filter("date < {:e}", { e: b.end }) }),
       api("/api/budget/goals").then((x) => x.goals.filter((g) => g.status !== "done").slice(0, 4)),
       api("/api/budget/forecast", { query: { days: 30, accounts: cfAccountsParam() } }).catch(() => null),
       loadCategories(), loadAccounts(),
     ]);
     const today = d.daily.today;
     const cur = d.daily.current, prev = d.daily.previous;
+    const [yy, mm] = state.month.split("-").map(Number);
+    const dim = new Date(yy, mm, 0).getDate();
     const curNow = today ? cur[today - 1] : 0;
     const prevSame = today ? prev[Math.min(today, prev.length) - 1] || 0 : 0;
     const diff = curNow - prevSame;
     const prevTotal = prev[prev.length - 1] || 0;
     const compare = !prevTotal && !curNow ? "No spending yet."
-      : d.is_current ? (Math.abs(diff) < 1 ? "About the same as last month at this point" : diff < 0 ? `<b class="pos">${money(-diff)} less</b> than last month at this point` : `<b class="negc">${money(diff)} more</b> than last month at this point`)
+      : d.is_current ? (Math.abs(diff) < 1 ? "About the same as last month so far" : diff < 0 ? `<b class="pos">${money(-diff)} less</b> than last month so far` : `<b class="negc">${money(diff)} more</b> than last month so far`)
         : `Last month: ${money(prevTotal)}`;
     const n = Math.max(cur.length, prev.length);
     const prevKey = shiftMonth(state.month, -1);
-    // scale to this month and the budget, not to last month's spike
     const curMax = Math.max(0, ...cur.slice(0, today || cur.length));
     const prevMax = Math.max(0, ...prev);
     const target = d.budgeted > 0 ? d.budgeted : 0;
     const capAt = Math.max(curMax * 1.25, target * 1.1, prevSame * 1.25, 1);
     const yMax = prevMax > capAt ? capAt : null;
     const chart = lineChart({
-      n, ariaLabel: "Cumulative spending this month vs last month", yMax,
+      n, ariaLabel: "Cumulative spending this month vs last month", yMax, height: 170,
       refs: target ? [{ v: target, label: `Budget ${compact(target)}` }] : [],
       series: [
         { values: prev.concat(Array(n - prev.length).fill(null)), color: "var(--muted)", dashed: true },
@@ -722,77 +761,118 @@
       tipFor: (i) => `<b>${esc(dayLabel(state.month, i + 1))}</b><br>This month: ${i < today ? money(cur[i]) : "—"}<br><span class="muted">${esc(dayLabel(prevKey, Math.min(i + 1, prev.length)))}: ${prev[i] != null ? money(prev[i]) : "—"}</span>`,
     });
 
+    // ---- how am I doing: bills are lumpy (rent on the 1st), so pace is judged on everyday spending
     const left = d.budget_left;
-    const usedPct = d.budgeted > 0 ? Math.min(100, (d.spent / d.budgeted) * 100) : 0;
-    const bills = rec.upcoming.filter((u) => u.kind !== "income" && u.days_until <= 14);
-    const billsTotal = bills.reduce((s, u) => s + u.amount, 0);
-    const spendCats = d.categories.filter((c) => c.kind !== "income" && c.spent > 0).sort((a, b) => b.spent - a.spent).slice(0, 5);
-    const topMax = Math.max(1, ...spendCats.map((c) => Math.max(c.spent, c.budget)));
+    const hasBudget = d.budgeted > 0;
+    const usedPct = hasBudget ? Math.min(100, (d.spent / d.budgeted) * 100) : 0;
+    const flexBudget = Math.max(0, d.budgeted - d.bills.expenses);
+    const flexSpent = Math.max(0, d.spent - d.bills.paid_this_month);
+    const flexPace = d.is_current && today ? flexBudget * (today / dim) : flexBudget;
+    const paceGap = flexPace - flexSpent;
+    const expectNow = hasBudget && d.is_current ? Math.min(100, ((d.bills.paid_this_month + flexPace) / d.budgeted) * 100) : null;
+    let status = null;
+    if (hasBudget) {
+      if (left < 0) status = ["bad", "Over budget", d.is_current ? `You're ${money(-left)} past this month's budget. Anything more adds to it.` : `This month ended ${money(-left)} over budget.`];
+      else if (!d.is_current) status = state.month < thisMonth() ? ["good", "Finished under", `This month ended ${money(left)} under budget.`] : null;
+      else if (paceGap >= 0) status = ["good", "On track", `Everyday spending is ${money(paceGap)} under pace for day ${today}. Keep it under ${money(d.safe_per_day)} a day.`];
+      else status = ["warn", "Ahead of pace", `Everyday spending is ${money(-paceGap)} ahead of pace for day ${today}. ${money(d.safe_per_day)} a day keeps you on budget.`];
+    }
 
-    const groups = GROUPS.filter(([k]) => nw.groups[k]).map(([k, label]) => {
-      const g = nw.groups[k];
-      return `<details class="acct-g"><summary><span>${label}</span><span class="num ${g.total < 0 ? "" : ""}">${money(g.total)}</span></summary>
-        ${g.accounts.map((a) => `<div class="acct-row"><span>${esc(a.name)}${a.institution ? ` <span class="muted small">${esc(a.institution)}</span>` : ""}</span><span class="num">${money(a.value)}</span></div>`).join("")}</details>`;
-    }).join("");
+    // ---- what needs my attention
+    const att = [];
+    if (cf && !cf.empty && cf.below_floor_day) att.push(["warn", `Checking may drop below ${money(cf.floor)} around ${prettyDate(cf.below_floor_day)}`, "#/cashflow", "See forecast"]);
+    if (cf && !cf.empty && cf.low.balance < 0 && !cf.below_floor_day) att.push(["bad", `Checking is projected to go negative around ${prettyDate(cf.low.day)}`, "#/cashflow", "See forecast"]);
+    const dueSoon = rec.upcoming.filter((u) => u.kind !== "income" && u.days_until >= 0 && u.days_until <= 3);
+    if (dueSoon.length === 1) att.push(["info", `${dueSoon[0].name} (${money(dueSoon[0].amount)}) is due ${dueText(dueSoon[0].days_until).toLowerCase()}`, "#/recurring", "Recurring"]);
+    else if (dueSoon.length > 1) att.push(["info", `${dueSoon.length} bills due in the next 3 days, ${money(dueSoon.reduce((s, u) => s + u.amount, 0))} in all`, "#/recurring", "Recurring"]);
+    for (const c of d.categories.filter((c) => c.kind !== "income" && c.budget > 0 && c.available > 0).sort((a, z) => z.spent / z.available - a.spent / a.available)) {
+      if (c.remaining < 0) att.push(["bad", `${c.name} is ${money(-c.remaining)} over budget`, "#/budget", "Budget"]);
+      // a bill paid in full (rent: $1,650 of $1,650) isn't a warning
+      else if (d.is_current && c.remaining >= 1 && c.spent / c.available >= 0.85) att.push(["warn", `${c.name} has ${money(c.remaining)} left (${Math.round((c.spent / c.available) * 100)}% used)`, "#/budget", "Budget"]);
+    }
+    if (d.uncategorized.count) att.push(["info", `${plural(d.uncategorized.count, "transaction")} (${money(d.uncategorized.amount)}) need a category`, "#/transactions?uncat=1", "Categorize"]);
+    for (const g of goals.filter((g) => g.status === "behind" && g.per_day != null).slice(0, 1)) att.push(["info", `${g.name} is behind: add ${money(g.per_day)}/day to reach it by ${prettyDate(g.target_date)}`, "#/goals", "Goals"]);
+    const attention = att.slice(0, 5);
+    const tips = d.tips.slice(0, Math.max(0, 4 - attention.length));
+
+    const bills = rec.upcoming.filter((u) => u.days_until >= 0 && u.days_until <= 14);
+    const billsOut = bills.filter((u) => u.kind !== "income").reduce((s, u) => s + u.amount, 0);
+    const spendCats = d.categories.filter((c) => c.kind !== "income" && c.spent > 0).sort((a, z) => z.spent - a.spent).slice(0, 5);
+    const topMax = Math.max(1, ...spendCats.map((c) => Math.max(c.spent, c.budget)));
+    const nwPct = nw.net - nw.change !== 0 ? (nw.change / Math.abs(nw.net - nw.change)) * 100 : 0;
+
+    const hero = hasBudget ? `
+      <section class="card ov-hero" aria-labelledby="ov-left">
+        <div class="row"><h2 id="ov-left" class="label">Left to spend${d.is_current ? "" : ` in ${esc(monthLabel(state.month))}`}</h2><div class="spacer"></div>${status ? `<span class="pill ${status[0] === "good" ? "ok" : status[0] === "bad" ? "err" : "warn-p"}">${status[1]}</span>` : ""}</div>
+        <div class="ov-big num ${left < 0 ? "negc" : ""}">${left < 0 ? "−" : ""}${money(Math.abs(left))}</div>
+        ${status ? `<p class="ov-status">${status[2]}</p>` : ""}
+        <div class="bar ov-bar ${barClass(Math.round((d.spent / d.budgeted) * 100))}" role="progressbar" aria-label="Budget used" aria-valuenow="${Math.round(usedPct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${usedPct}%"></i>${expectNow != null ? `<b style="left:${expectNow}%" ${tipAttr(`Where you'd be today on pace: <b>${esc(money(d.budgeted * expectNow / 100))}</b>`)}></b>` : ""}</div>
+        <div class="ov-facts">
+          <div><span class="label">Spent</span><b class="num">${money(d.spent)}</b><span class="small muted">of ${money(d.budgeted)}</span></div>
+          ${d.is_current && d.remaining_days ? `<div><span class="label">Safe per day</span><b class="num">${money(Math.max(0, d.safe_per_day))}</b><span class="small muted">${plural(d.remaining_days, "day")} left</span></div>` : ""}
+          <div><span class="label">Bills still due</span><b class="num">${money(d.bills.remaining_this_month)}</b><span class="small muted">${money(d.bills.paid_this_month)} paid</span></div>
+        </div>
+        <a class="ov-more" href="#/budget">Open budget <span aria-hidden="true">→</span></a>
+      </section>` : `
+      <section class="card ov-hero">
+        <h2 class="label">Spent ${d.is_current ? "this month" : "in " + esc(monthLabel(state.month))}</h2>
+        <div class="ov-big num">${money(d.spent)}</div>
+        <p class="ov-status">${compare}. Set one monthly spending number and Keel shows what's left, what's safe per day and whether you're on track.</p>
+        <a class="btn primary" href="#/budget">Create a budget</a>
+      </section>`;
 
     view.innerHTML = `
       <div class="stack">${installBanner()}
-        <div class="grid dash-top">
-          <div class="card hero">
-            <div class="card-h"><div><div class="label">Spent ${d.is_current ? "this month" : "in " + esc(monthLabel(state.month))}</div>
-              <div class="big num">${money(d.spent)}</div><div class="small muted">${compare}</div></div>
-              <div class="spacer"></div>
-              <div class="legend"><span style="--c:var(--s1)">This month</span><span class="dash" style="--c:var(--muted)">Last month${yMax != null ? ` (${esc(compact(prevTotal))} total)` : ""}</span></div></div>
+        <div class="grid ov-top">
+          ${hero}
+          <section class="card" aria-labelledby="ov-att">
+            <div class="card-h"><h2 id="ov-att">Needs attention</h2>${attention.length ? `<span class="pill">${attention.length}</span>` : ""}</div>
+            ${attention.length ? `<ul class="att">${attention.map(([lv, text, href, label]) => `<li class="${lv}"><span class="grow">${esc(text)}</span><a class="btn sm" href="${href}">${label}</a></li>`).join("")}</ul>`
+              : `<div class="att-ok"><span class="act-seal ok sm" aria-hidden="true"><svg viewBox="0 0 52 52"><path class="act-tick" d="M16 27l7 7 14-15"/></svg></span><div><b>You're all caught up</b><div class="small muted">No bills due in the next few days, nothing over budget, nothing to categorize.</div></div></div>`}
+            ${tips.length ? `<div class="kind-h">Insights</div><ul class="tips">${tips.map((t) => `<li class="${t.level}">${esc(t.text)}</li>`).join("")}</ul>` : ""}
+          </section>
+        </div>
+
+        <div class="grid ov-mid">
+          <section class="card" aria-labelledby="ov-pace">
+            <div class="card-h"><div><h2 id="ov-pace">Spending this month</h2><div class="small muted">${compare}</div></div><div class="spacer"></div>
+              <div class="legend" style="margin:0"><span style="--c:var(--s1)">This month</span><span class="dash" style="--c:var(--muted)">Last month${yMax != null ? ` (${esc(compact(prevTotal))})` : ""}</span></div></div>
             ${chart}
-          </div>
-          <div class="stack">
-            <div class="card">
-              <div class="card-h"><h2>Left to spend</h2><div class="spacer"></div><a href="#/budget" class="small">Budget →</a></div>
-              ${d.budgeted > 0 ? `
-                <div class="big num" style="color:${left < 0 ? "var(--bad-text)" : "var(--text)"}">${money(left)}</div>
-                <div class="bar ${barClass(Math.round((d.spent / d.budgeted) * 100))}" style="margin:10px 0 6px"><i style="width:${usedPct}%"></i></div>
-                <div class="row small muted"><span>${money(d.spent)} of ${money(d.budgeted)}</span><div class="spacer"></div>${d.is_current && d.remaining_days ? `<span>${money(d.safe_per_day)}/day · ${d.remaining_days} days left</span>` : ""}</div>`
-              : `<p class="muted" style="margin:0 0 10px">Set a monthly budget to see what's left to spend.</p><a class="btn primary sm" href="#/budget">Create a budget</a>`}
-            </div>
-            <div class="card">
-              <div class="card-h"><h2>Upcoming</h2><div class="spacer"></div><span class="small muted">next 14 days · ${money(billsTotal)}</span></div>
-              ${bills.length ? bills.slice(0, 5).map((u) => `<a class="bill-line" href="#/recurring">${avatar(u.name)}<div class="grow"><div class="t-name">${esc(u.name)}</div><div class="small muted">${dueText(u.days_until)} · ${prettyDate(u.date)}</div></div><div class="num">${money(u.amount)}</div></a>`).join("")
-                : `<div class="muted small">No bills due in the next two weeks.${rec.items.length ? "" : ` Recurring charges are detected from your history; <a href="#/recurring">add one</a>.`}</div>`}
-            </div>
-          </div>
+          </section>
+          <section class="card" aria-labelledby="ov-up">
+            <div class="card-h"><h2 id="ov-up">Upcoming</h2><div class="spacer"></div><span class="small muted">next 14 days${billsOut ? ` · ${money(billsOut)} out` : ""}</span></div>
+            ${bills.length ? bills.slice(0, 5).map((u) => dueLine(u)).join("") + (bills.length > 5 ? `<a class="small ov-more" href="#/recurring">${bills.length - 5} more →</a>` : "")
+              : `<div class="muted small">Nothing due in the next two weeks.${rec.items.length ? "" : ` Recurring charges are detected from your history; <a href="#/recurring">add one</a>.`}</div>`}
+          </section>
         </div>
 
         <div class="grid two">
-          <div class="card">
-            <div class="card-h"><h2>Recent transactions</h2><div class="spacer"></div><a href="#/transactions" class="small">See all →</a></div>
+          <section class="card" aria-labelledby="ov-rec">
+            <div class="card-h"><h2 id="ov-rec">Recent transactions</h2><div class="spacer"></div><a href="#/transactions" class="small">See all →</a></div>
             ${recent.items.length ? recent.items.map(txLine).join("") : `<div class="empty">No transactions yet. <a href="#/accounts">Connect a bank</a> or import a CSV.</div>`}
-          </div>
+          </section>
           <div class="stack">
-            ${cf && !cf.empty ? `<div class="card">
-              <div class="card-h"><h2>Cash flow</h2><div class="spacer"></div><a href="#/cashflow" class="small">Forecast →</a></div>
-              <div class="row" style="align-items:flex-end"><div><div class="label">Lowest in the next 30 days</div><div class="big num ${cf.below_floor_day ? "negc" : ""}">${money(cf.low.balance)}</div>
+            ${cf && !cf.empty ? `<a class="card" href="#/cashflow" aria-label="Cash flow forecast">
+              <div class="card-h"><h2>Cash flow</h2><div class="spacer"></div><span class="small link-t">Forecast →</span></div>
+              <div class="row" style="align-items:flex-end;flex-wrap:nowrap"><div><div class="label">Lowest in the next 30 days</div><div class="kpi-v num ${cf.below_floor_day || cf.low.balance < 0 ? "negc" : ""}">${money(cf.low.balance)}</div>
                 <div class="small muted">${cf.low.day === cf.today ? "Today" : esc(prettyDate(cf.low.day))}${cf.next_income ? ` · next deposit ${esc(prettyDate(cf.next_income.day))}` : ""}</div></div>
                 <div class="spacer"></div>${sparkline(cf.points.filter((p, i) => i % 2 === 0).map((p) => p.balance))}</div>
-              ${cf.below_floor_day ? `<div class="callout small cf-warn" style="margin-top:10px">Checking may drop below ${money(cf.floor)} around ${esc(prettyDate(cf.below_floor_day))}.</div>` : ""}
-            </div>` : ""}
-            <div class="card">
-              <div class="card-h"><h2>Net worth</h2><div class="spacer"></div><a href="#/networth" class="small">Details →</a></div>
-              <div class="big num">${money(nw.net)}</div>
-              <div class="small muted">${nw.change === 0 ? "No change" : signed(nw.change)} over the last 30 days</div>
-              <div class="accts">${groups || `<div class="muted small" style="margin-top:10px">No accounts yet.</div>`}</div>
-            </div>
-            <div class="card">
-              <div class="card-h"><h2>Top categories</h2><div class="spacer"></div><a href="#/spending" class="small">Spending →</a></div>
+            </a>` : ""}
+            <a class="card" href="#/networth" aria-label="Net worth">
+              <div class="card-h"><h2>Net worth</h2><div class="spacer"></div><span class="small link-t">Details →</span></div>
+              <div class="kpi-v num">${money(nw.net)}</div>
+              <div class="small muted">${nw.change === 0 ? "No change" : `${signed(nw.change)} (${nwPct >= 0 ? "+" : "−"}${Math.abs(nwPct).toFixed(1)}%)`} in the last 30 days</div>
+            </a>
+            <section class="card" aria-labelledby="ov-cat">
+              <div class="card-h"><h2 id="ov-cat">Top categories</h2><div class="spacer"></div><a href="#/spending" class="small">Spending →</a></div>
               ${spendCats.length ? spendCats.map((c) => `<div class="cat-row"><div>${catLabel(c)}</div><div class="num">${money(c.spent)}${c.budget ? ` <span class="muted">/ ${money(c.budget)}</span>` : ""}</div>
                 <div class="bar ${c.budget ? barClass(c.pct) : ""}"><i style="width:${(c.spent / topMax) * 100}%"></i></div></div>`).join("") : `<div class="muted small">No spending yet this month.</div>`}
-              ${d.uncategorized.count ? `<div class="row small" style="margin-top:12px"><span class="muted">${plural(d.uncategorized.count, "transaction")} (${money(d.uncategorized.amount)}) need a category</span><div class="spacer"></div><a class="btn sm" href="#/transactions?uncat=1">Categorize</a></div>` : ""}
-            </div>
+            </section>
           </div>
         </div>
 
-        ${d.tips.length ? `<div class="card"><div class="card-h"><h2>Insights</h2></div><ul class="tips">${d.tips.map((t) => `<li class="${t.level}">${esc(t.text)}</li>`).join("")}</ul></div>` : ""}
-        ${goals.length ? `<div class="card"><div class="card-h"><h2>Goals</h2><div class="spacer"></div><a href="#/goals" class="small">All goals →</a></div>
-          <div class="grid goals-grid">${goals.map(goalCard).join("")}</div></div>` : ""}
+        ${goals.length ? `<section class="card"><div class="card-h"><h2>Goals</h2><div class="spacer"></div><a href="#/goals" class="small">All goals →</a></div>
+          <div class="grid goals-grid">${goals.map(goalCard).join("")}</div></section>` : ""}
       </div>`;
     const byId = Object.fromEntries(recent.items.map((t) => [t.id, t]));
     $$(".tx-line", view).forEach((el) => (el.onclick = () => editTx(byId[el.dataset.id])));
@@ -814,9 +894,17 @@
     const vsAvg = base ? s.total - base : 0;
     const uncat = s.categories.find((c) => !c.id);
     const merchMax = Math.max(1, ...s.merchants.map((m) => m.total));
+    const big = s.categories[0];
+    const said = [];
+    if (big && s.total) said.push(`<b>${esc(big.name)}</b> is your biggest category at ${Math.round((big.total / s.total) * 100)}% of spending`);
+    if (base && Math.abs(vsAvg) >= Math.max(5, base * 0.03)) said.push(`you're spending ${money(Math.abs(vsAvg))} ${vsAvg > 0 ? "more" : "less"} than ${paced ? "usual at this point in the month" : "an average month"}`);
+    else if (base) said.push(`you're spending about what you usually do${paced ? " by now" : ""}`);
+    if (s.merchants[0] && s.merchants[0].count > 2) said.push(`${esc(s.merchants[0].name)} shows up ${s.merchants[0].count} times`);
+    const summary = said.length ? `<p class="sp-sum">${cap(said.join(", ").replace(/, ([^,]*)$/, said.length > 2 ? ", and $1" : " and $1"))}.</p>` : "";
 
     view.innerHTML = `
       <div class="stack">
+        ${summary}
         <div class="grid kpis">
           <div class="card kpi"><div class="label">Spent</div><div class="value num">${money(s.total)}</div><div class="sub">${plural(s.transactions, "purchase")}</div></div>
           <div class="card kpi"><div class="label">${paced ? "vs usual at this point" : `vs ${s.months_compared || 5}-month average`}</div><div class="value num">${base ? money(Math.abs(vsAvg)) + `<span class="${vsAvg > 0 ? "negc" : "pos"}" style="font-size:14px;font-weight:600"> ${vsAvg > 0 ? "more" : "less"}</span>` : "—"}</div><div class="sub">${paced ? `Usually ${money(base)} by day ${s.day} · ${money(s.average)} a full month` : `Average ${money(s.average)} a month`}</div></div>
@@ -826,18 +914,26 @@
           <div class="card">
             <div class="card-h"><h2>By category</h2>${uncat ? `<div class="spacer"></div><span class="small muted">${money(uncat.total)} uncategorized</span><a class="btn sm" href="#/transactions?uncat=1">Categorize</a>` : ""}</div>
             ${s.categories.length ? `<div class="donut-wrap">${donut(items, s.total, "spent")}
-              <div class="d-legend">${items.map((it) => `<button class="d-item" ${it.id != null ? `data-cat="${it.id}"` : "disabled"}>${catMark(it.cat, true)}<span class="grow">${esc(it.label)}</span><span class="num">${money(it.value)}</span><span class="num muted small">${s.total ? Math.round((it.value / s.total) * 100) : 0}%</span></button>`).join("")}</div></div>`
+              <div class="d-legend">${items.map((it, i) => `<button class="d-item" data-i="${i}" ${it.id != null ? `data-cat="${it.id}"` : "disabled"}>${catMark(it.cat, true)}<span class="grow">${esc(it.label)}</span><span class="num">${money(it.value)}</span><span class="num muted small">${s.total ? Math.round((it.value / s.total) * 100) : 0}%</span></button>`).join("")}</div></div>`
               : `<div class="empty">No spending in ${esc(monthLabel(state.month))}.</div>`}
             ${s.excluded && s.excluded.count ? `<div class="row small muted ex-note"><span>${plural(s.excluded.count, "transaction")} (${money(Math.abs(s.excluded.total))}) not counted because you excluded ${s.excluded.count === 1 ? "it" : "them"}</span><div class="spacer"></div><a href="#/transactions?excluded=1">View</a></div>` : ""}
           </div>
           <div class="card">
-            <div class="card-h"><h2>Top merchants</h2></div>
-            ${s.merchants.length ? s.merchants.slice(0, 10).map((m) => `<div class="cat-row"><div class="desc">${esc(m.name)} <span class="muted small">×${m.count}</span></div><div class="num">${money(m.total)}</div><div class="bar"><i style="width:${(m.total / merchMax) * 100}%"></i></div></div>`).join("") : `<div class="muted small">Nothing yet.</div>`}
+            <div class="card-h"><h2>Top merchants</h2><div class="spacer"></div><span class="small muted">${esc(monthLabel(state.month))}</span></div>
+            ${s.merchants.length ? `<ol class="m-list">${s.merchants.slice(0, 10).map((m, i) => `<li><span class="m-rank num">${i + 1}</span><span class="grow desc">${esc(m.name)}</span><span class="small muted num">${plural(m.count, "visit")}</span><span class="m-meter" aria-hidden="true"><i style="width:${(m.total / merchMax) * 100}%"></i></span><span class="num m-amt">${money(m.total)}</span></li>`).join("")}</ol>` : `<div class="muted small">Nothing yet.</div>`}
           </div>
         </div>
         <div class="card"><div class="card-h"><h2>Last 6 months</h2></div>${monthBars(s.trend, s.average, state.month)}</div>
       </div>`;
-    $$(".d-item[data-cat]", view).forEach((b) => (b.onclick = () => { txState.category = b.dataset.cat || "__none"; txState.page = 1; location.hash = "#/transactions"; }));
+    const goCat = (id) => { txState.category = id || "__none"; txState.page = 1; location.hash = "#/transactions"; };
+    $$(".d-item[data-cat]", view).forEach((b) => (b.onclick = () => goCat(b.dataset.cat)));
+    // the donut and its legend highlight each other; a slice opens its transactions
+    const dw = $(".donut-wrap", view);
+    if (dw) {
+      const hi = (i) => { dw.classList.toggle("hl", i != null); $$("[data-i]", dw).forEach((el) => el.classList.toggle("on", el.dataset.i === i)); };
+      $$("[data-i]", dw).forEach((el) => { el.addEventListener("mouseenter", () => hi(el.dataset.i)); el.addEventListener("mouseleave", () => hi(null)); el.addEventListener("focus", () => hi(el.dataset.i)); el.addEventListener("blur", () => hi(null)); });
+      $$(".d-seg.click", dw).forEach((el) => el.addEventListener("click", () => { const it = items[+el.dataset.i]; if (it && it.id != null) goCat(it.id); }));
+    }
   }
 
   // ------------------------------------------------------------------ recurring
@@ -927,7 +1023,13 @@
             <button class="btn primary" id="rec-add">+ Add</button>
           </div>
           ${tab === "upcoming" ? `<div class="grid rec-up">
-              <div><div class="kind-h">Next 30 days</div>${upcoming.length ? upcoming.map((u) => { const it = r.items.find((x) => x.id === u.id); return `<div class="tx-line click rec" data-id="${u.id}">${avatar(u.name, it && catById(it.category))}<div class="grow"><div class="t-name">${esc(u.name)}</div><div class="small muted">${dueText(u.days_until)} · ${prettyDate(u.date)} · ${u.kind === "income" ? "Income" : u.kind === "subscription" ? "Subscription" : "Bill"}</div></div><div class="num ${u.kind === "income" ? "pos" : ""}">${u.kind === "income" ? "+" : ""}${money(u.amount)}</div></div>`; }).join("") : `<div class="muted small">Nothing due in the next 30 days.</div>`}</div>
+              <div><div class="kind-h">Next 30 days</div>${upcoming.length ? upcoming.map((u) => {
+                const [, mo, dd] = dateOnly(u.date).split("-").map(Number);
+                const urgent = u.days_until <= 1, soon = u.days_until <= 3;
+                const kindL = u.kind === "income" ? "Income" : u.kind === "subscription" ? "Subscription" : "Bill";
+                return `<div class="tx-line click rec due-line" data-id="${u.id}" role="button" tabindex="0"><span class="due-d${urgent ? " soon" : ""}" aria-hidden="true"><b>${dd}</b><span>${esc(new Date(2000, mo - 1, 1).toLocaleDateString(undefined, { month: "short" }))}</span></span>
+                  <div class="grow"><div class="t-name">${esc(u.name)}</div><div class="small muted">${urgent || soon ? `<span class="pill ${urgent ? "warn-p" : ""}">${esc(dueText(u.days_until))}</span>` : esc(dueText(u.days_until))} · <span class="rk rk-${u.kind}">${kindL}</span></div></div><div class="num ${u.kind === "income" ? "pos" : ""}">${u.kind === "income" ? "+" : ""}${money(u.amount)}</div></div>`;
+              }).join("") : `<div class="muted small">Nothing due in the next 30 days.</div>`}</div>
               <div class="cal-box"><div class="kind-h">${esc(monthLabel(state.month))}</div>${billCalendar(state.month, r.calendar, r.today)}<div class="legend"><span style="--c:var(--s1)">Bill or subscription</span><span style="--c:var(--good)">Income</span><span class="faded" style="--c:var(--subtle)">Paid</span></div></div>
             </div>`
             : tab === "bill" || tab === "income" ? (section(tab) || `<div class="empty">${emptyKind[tab]}</div>`)
@@ -938,7 +1040,10 @@
       </div>`;
     $$("[data-tab]", view).forEach((b) => (b.onclick = () => { recState.tab = b.dataset.tab; route(); }));
     const byId = Object.fromEntries(r.items.map((x) => [x.id, x]));
-    $$(".rec", view).forEach((el) => (el.onclick = () => editRecurring(byId[el.dataset.id])));
+    $$(".rec", view).forEach((el) => {
+      el.onclick = () => editRecurring(byId[el.dataset.id]);
+      el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
+    });
     $("#rec-add").onclick = () => editRecurring(null, tab === "subscriptions" ? { kind: "subscription" } : tab === "income" ? { kind: "income" } : undefined);
     $("#rec-scan").onclick = async (e) => {
       e.target.disabled = true;
@@ -1140,13 +1245,15 @@
       const g = nw.groups[k]; if (!g) continue;
       (k === "credit" || k === "loan" ? liabG : assetG).push({ label, g });
     }
-    const list = (arr) => arr.length ? arr.map(({ label, g }) => `<div class="kind-h row"><span>${label}</span><div class="spacer"></div><span class="num">${money(Math.abs(g.total))}</span></div>
-      ${g.accounts.map((a) => `<div class="acct-row"><span>${esc(acctLabel(a))}${a.institution ? ` <span class="muted small">${esc(a.institution)}</span>` : ""}</span><span class="num">${money(Math.abs(a.value))}</span></div>`).join("")}`).join("") : "";
+    const list = (arr) => arr.length ? arr.map(({ label, g }) => `<details class="nw-g" open><summary><span class="nw-chev" aria-hidden="true">▸</span><span class="grow"><b>${label}</b> <span class="muted small">${plural(g.accounts.length, "account")}</span></span><span class="num">${money(Math.abs(g.total))}</span></summary>
+      ${g.accounts.map((a) => `<div class="acct-row"><span>${esc(acctLabel(a))}${a.institution ? ` <span class="muted small">${esc(a.institution)}</span>` : ""}</span><span class="num">${money(Math.abs(a.value))}</span></div>`).join("")}</details>`).join("") : "";
+    const startNet = nw.net - nw.change;
+    const pctCh = startNet ? (nw.change / Math.abs(startNet)) * 100 : 0;
     view.innerHTML = `
       <div class="stack">
         <div class="card hero">
           <div class="card-h"><div><div class="label">Net worth</div><div class="big num">${money(nw.net)}</div>
-            <div class="small muted">${nw.change === 0 ? "No change" : signed(nw.change)} over the last ${nwState.days} days</div></div>
+            <div class="small muted">${nw.change === 0 ? "No change" : `<span class="${nw.change > 0 ? "pos" : "negc"}">${signed(nw.change)}${startNet ? ` (${pctCh >= 0 ? "+" : "−"}${Math.abs(pctCh).toFixed(1)}%)` : ""}</span>`} over the last ${nwState.days} days</div></div>
             <div class="spacer"></div>
             <div class="seg">${[[30, "1M"], [90, "3M"], [180, "6M"], [365, "1Y"]].map(([dd, l]) => `<button data-days="${dd}" class="${nwState.days === dd ? "on" : ""}">${l}</button>`).join("")}</div></div>
           ${chart}
@@ -1165,32 +1272,61 @@
   // ------------------------------------------------------------------ transactions
   const txState = { page: 1, q: "", account: "", category: "" };
 
+  // One transaction as a table row on desktop (merchant, category, account, amount) and a two-line row on phones.
+  function txRow(t) {
+    const c = catById(t.category);
+    const acc = accById(t.account);
+    const catName = c ? c.name : "Uncategorized";
+    const inflow = t.amount > 0;
+    return `<div class="tx-row click" data-id="${t.id}" role="button" tabindex="0">
+      ${avatar(t.payee || t.description, c)}
+      <div class="tx-m"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
+        <div class="small muted tx-sub">${t.split ? `Split · ${esc(catName)} and more` : esc(catName)}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
+      <div class="tx-c">${t.split ? `<span class="cl">${catMark(c, true)}<span>${esc(catName)} <span class="muted">+ split</span></span></span>` : catLabel(c)}</div>
+      <div class="tx-a small muted">${acc ? esc(acctLabel(acc)) : ""}</div>
+      <div class="tx-amt num ${inflow ? "pos" : ""}">${inflow ? "+" : "−"}${money(Math.abs(t.amount))}${inflow ? '<span class="sr-only"> in</span>' : '<span class="sr-only"> out</span>'}</div>
+    </div>`;
+  }
+
   async function renderTransactions(view) {
     await Promise.all([loadCategories(), loadAccounts()]);
     if (/uncat=1/.test(location.hash)) { txState.category = "__none"; history.replaceState(null, "", "#/transactions"); }
     if (/excluded=1/.test(location.hash)) { txState.category = "__excluded"; history.replaceState(null, "", "#/transactions"); }
+    const active = (txState.account ? 1 : 0) + (txState.category ? 1 : 0);
     view.innerHTML = `
-      <div class="card">
-        <div class="row" style="margin-bottom:14px">
-          <input id="tq" placeholder="Search description or payee…" value="${esc(txState.q)}" style="max-width:260px">
-          <select id="tacc" class="inline">${accountOptions(txState.account, true)}</select>
-          <select id="tcat" class="inline"><option value="">All categories</option><option value="__none" ${txState.category === "__none" ? "selected" : ""}>Uncategorized</option><option value="__split" ${txState.category === "__split" ? "selected" : ""}>Split</option><option value="__excluded" ${txState.category === "__excluded" ? "selected" : ""}>Excluded from budget</option>${categoryOptions(txState.category, { includeNone: false })}</select>
+      <div class="card tx-card">
+        <div class="tx-bar">
+          <label class="search"><span class="sr-only">Search transactions</span><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="tq" type="search" placeholder="${matchMedia("(max-width: 760px)").matches ? "Search" : "Search merchant, description or notes"}" value="${esc(txState.q)}"></label>
+          <button class="btn tx-filt-btn" id="tfilt" aria-expanded="false" aria-controls="tx-filters">Filters${active ? ` <span class="pill">${active}</span>` : ""}</button>
+          <div class="tx-filters" id="tx-filters">
+            <select id="tacc" aria-label="Account">${accountOptions(txState.account, true)}</select>
+            <select id="tcat" aria-label="Category"><option value="">All categories</option><option value="__none" ${txState.category === "__none" ? "selected" : ""}>Uncategorized</option><option value="__split" ${txState.category === "__split" ? "selected" : ""}>Split</option><option value="__excluded" ${txState.category === "__excluded" ? "selected" : ""}>Excluded from budget</option>${categoryOptions(txState.category, { includeNone: false })}</select>
+            ${active ? `<button class="btn link" id="tclear">Clear</button>` : ""}
+          </div>
           <div class="spacer"></div>
           <button class="btn" id="apply-rules" title="Run your rules on uncategorized transactions">Apply rules</button>
           <button class="btn primary" id="add-tx">+ Add</button>
         </div>
-        <div id="tx-list"><div class="empty">Loading…</div></div>
+        <div class="tx-head" aria-hidden="true"><span></span><span>Merchant</span><span>Category</span><span>Account</span><span class="right">Amount</span></div>
+        <div id="tx-list">${SKELETON_ROWS}</div>
       </div>`;
     let t;
     $("#tq").oninput = (e) => { clearTimeout(t); t = setTimeout(() => { txState.q = e.target.value; txState.page = 1; loadTx(); }, 250); };
-    $("#tacc").onchange = (e) => { txState.account = e.target.value; txState.page = 1; loadTx(); };
-    $("#tcat").onchange = (e) => { txState.category = e.target.value; txState.page = 1; loadTx(); };
+    $("#tacc").onchange = (e) => { txState.account = e.target.value; txState.page = 1; renderTransactions(view); };
+    $("#tcat").onchange = (e) => { txState.category = e.target.value; txState.page = 1; renderTransactions(view); };
+    const clr = $("#tclear"); if (clr) clr.onclick = () => { txState.account = ""; txState.category = ""; txState.page = 1; renderTransactions(view); };
+    $("#tfilt").onclick = (e) => { const box = $("#tx-filters"); const open = box.classList.toggle("open"); e.currentTarget.setAttribute("aria-expanded", open); };
+    if (active && matchMedia("(max-width: 760px)").matches) { $("#tx-filters").classList.add("open"); $("#tfilt").setAttribute("aria-expanded", "true"); }
     $("#add-tx").onclick = () => editTx(null);
-    $("#apply-rules").onclick = async () => {
+    $("#apply-rules").onclick = async (e) => {
+      const btn = e.currentTarget; btn.classList.add("loading");
       try { const r = await api("/api/budget/apply-rules", { method: "POST" }); toast(`Categorized ${plural(r.updated, "transaction")}`); loadTx(); } catch (err) { fail(err); }
+      btn.classList.remove("loading");
     };
     await loadTx();
   }
+  const SKELETON_ROWS = `<div class="sk-rows" aria-busy="true">${'<div class="sk-tx"><i class="c"></i><i></i><i class="s"></i></div>'.repeat(6)}</div>`;
 
   async function loadTx() {
     const box = $("#tx-list"); if (!box) return;
@@ -1206,7 +1342,9 @@
     else if (txState.category) { parts.push("(category = {:c} || tx_splits_via_transaction.category ?= {:c})"); params.c = txState.category; }
     const res = await pb.collection("transactions").getList(txState.page, 100, { filter: pb.filter(parts.join(" && "), params), sort: "-date,-created" });
     if (!res.items.length) {
-      box.innerHTML = `<div class="empty">No transactions for ${esc(monthLabel(state.month))}${state.accounts.length ? "" : ` — <a href="#/accounts">connect a bank or import a CSV</a>`}.</div>`;
+      const filtered = txState.q || txState.account || txState.category;
+      box.innerHTML = `<div class="empty">${filtered ? `Nothing matches in ${esc(monthLabel(state.month))}. Try another search or clear the filters.`
+        : `No transactions for ${esc(monthLabel(state.month))}.${state.accounts.length ? "" : ` <a href="#/accounts">Connect a bank or import a CSV</a> to get started.`}`}</div>`;
       return;
     }
     const total = res.items.reduce((s, t) => s + t.amount, 0);
@@ -1218,16 +1356,19 @@
     }
     const dayHead = (d) => { const [y, m, dd] = d.split("-").map(Number); return new Date(y, m - 1, dd).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }); };
     box.innerHTML = `
-      ${days.map((g) => `<div class="day-h row"><span>${esc(dayHead(g.d))}</span><div class="spacer"></div><span class="num small">${money(g.items.reduce((s, t) => s + t.amount, 0))}</span></div>
-        ${g.items.map(txLine).join("")}`).join("")}
-      <div class="row" style="margin-top:12px">
-        <span class="muted small">${plural(res.totalItems, "transaction")} · net ${money(total)} on this page</span>
+      ${days.map((g) => { const sum = g.items.reduce((s, t) => s + t.amount, 0); return `<div class="day-h"><span>${esc(dayHead(g.d))}</span><span class="spacer"></span><span class="num">${sum > 0 ? "+" : sum < 0 ? "−" : ""}${money(Math.abs(sum))}</span></div>
+        ${g.items.map(txRow).join("")}`; }).join("")}
+      <div class="row tx-foot">
+        <span class="muted small">${plural(res.totalItems, "transaction")} · net ${money(total)}${res.totalPages > 1 ? " on this page" : ""}</span>
         <div class="spacer"></div>
         ${res.page > 1 ? `<button class="btn sm" id="pprev">‹ Prev</button>` : ""}
         ${res.page < res.totalPages ? `<button class="btn sm" id="pnext">Next ›</button>` : ""}
       </div>`;
     const items = Object.fromEntries(res.items.map((t) => [t.id, t]));
-    $$(".tx-line", box).forEach((el) => (el.onclick = () => editTx(items[el.dataset.id])));
+    $$(".tx-row", box).forEach((el) => {
+      el.onclick = () => editTx(items[el.dataset.id]);
+      el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
+    });
     const pp = $("#pprev"); if (pp) pp.onclick = () => { txState.page--; loadTx(); };
     const pn = $("#pnext"); if (pn) pn.onclick = () => { txState.page++; loadTx(); };
   }
@@ -1353,10 +1494,11 @@
       ${tx.pending ? `<div class="callout small" style="margin-bottom:12px">This charge is still pending. Banks sometimes give it a new ID when it posts, which would drop the split, so it's safest to split it after it posts.</div>` : ""}
       <form id="sp-form" class="stack">
         <div id="sp-rows"></div>
-        <div class="row"><button type="button" class="btn sm" id="sp-add">+ Add a part</button><button type="button" class="btn sm" id="sp-even">Split evenly</button><div class="spacer"></div><span id="sp-left" class="small" aria-live="polite"></span></div>
+        <div class="row"><button type="button" class="btn sm" id="sp-add">+ Add a part</button><button type="button" class="btn sm" id="sp-even">Split evenly</button><div class="spacer"></div><span id="sp-left" class="small" aria-live="polite"></span><button type="button" class="btn sm" id="sp-fill" hidden>Fill the rest</button></div>
         <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="sp-save">Save split</button></div>
       </form>`, {
       onMount: (m, close) => {
+        m.classList.add("mid");
         const box = $("#sp-rows", m);
         const cents = (v) => Math.round((Number(v) || 0) * 100);
         const sync = () => {
@@ -1368,13 +1510,17 @@
           el.textContent = left === 0 ? (filled >= 2 ? "Adds up" : "Give at least two parts an amount") : left > 0 ? `${money(left / 100)} left to assign` : `${money(-left / 100)} too much`;
           if (left === 0 && filled < 2) el.className = "small muted";
           $("#sp-save", m).disabled = left !== 0 || filled < 2;
+          $("#sp-fill", m).hidden = left <= 0;
         };
+        // "Fill the rest" puts what's left on the part you were last typing in (or the last empty one)
+        let lastI = null;
         const draw = () => {
           box.innerHTML = rows.map(rowHtml).join("");
           $$(".sp-row", box).forEach((el) => {
             const i = +el.dataset.i;
             $(".sp-cat", el).onchange = (e) => { rows[i].category = e.target.value; };
             $(".sp-note", el).oninput = (e) => { rows[i].note = e.target.value; };
+            $(".sp-amt", el).onfocus = () => { lastI = i; };
             $(".sp-amt", el).oninput = (e) => {
               rows[i].amount = e.target.value;
               if (i === 0) firstTouched = true;
@@ -1396,6 +1542,15 @@
           rows.push({ category: "", amount: left ? left / 100 : "", note: "" });
           draw();
           const last = $$(".sp-row", box).pop(); if (last) $(".sp-cat", last).focus();
+        };
+        $("#sp-fill", m).onclick = () => {
+          const left = cents(total) - rows.reduce((s2, r) => s2 + cents(r.amount), 0);
+          if (left <= 0) return;
+          let i = lastI != null && rows[lastI] ? lastI : rows.findIndex((r) => !cents(r.amount));
+          if (i < 0) i = rows.length - 1;
+          rows[i].amount = (cents(rows[i].amount) + left) / 100;
+          firstTouched = true;
+          draw();
         };
         $("#sp-even", m).onclick = () => {
           const n = rows.length, each = Math.floor(cents(total) / n);
@@ -1423,8 +1578,8 @@
   function ring(pct, cls, big, sub) {
     const R = 64, C = 2 * Math.PI * R, p = Math.max(0, Math.min(100, pct));
     return `<svg class="ring ${cls}" viewBox="0 0 160 160" role="img" aria-label="${esc(sub)}">
-      <circle r="${R}" cx="80" cy="80" fill="none" stroke="var(--track)" stroke-width="14"/>
-      <circle r="${R}" cx="80" cy="80" fill="none" stroke="currentColor" stroke-width="14" stroke-linecap="round"
+      <circle r="${R}" cx="80" cy="80" fill="none" stroke="var(--track)" stroke-width="18"/>
+      <circle r="${R}" cx="80" cy="80" fill="none" stroke="currentColor" stroke-width="18" stroke-linecap="round"
         stroke-dasharray="${(p / 100) * C} ${C}" transform="rotate(-90 80 80)"/>
       <text x="80" y="78" text-anchor="middle" class="d-big">${esc(big)}</text>
       <text x="80" y="98" text-anchor="middle" class="d-sub">${esc(sub)}</text></svg>`;
@@ -1436,10 +1591,13 @@
     const tooLow = c.avg3 > 0 && c.available >= 0 && c.avg3 > Math.max(c.available * 1.5, c.available + 25);
     const pct = c.available > 0 ? Math.min(100, (c.spent / c.available) * 100) : (c.spent > 0 ? 100 : 0);
     const proj = d.is_current && c.available > 0 && c.projected > c.spent ? Math.min(100, (c.projected / c.available) * 100) : null;
-    return `<div class="b-row click" data-id="${c.id || ""}">
+    const used = c.available > 0 ? Math.round((c.spent / c.available) * 100) : null;
+    const onPlan = c.available > 0 && Math.abs(c.remaining) < 0.5;
+    const cls = onPlan ? "good" : barClass(used);
+    return `<div class="b-row click" data-id="${c.id || ""}" role="button" tabindex="0" aria-label="${esc(c.name)}: ${esc(over ? money(-c.remaining) + " over" : money(c.remaining) + " left")}. Edit budget">
       <div class="row"><span class="b-name">${catLabel(c)}</span>${c.rollover ? `<span class="pill" title="Unspent money carries over to next month">rollover</span>` : ""}
-        <div class="spacer"></div><span class="num ${over ? "over" : ""}">${over ? money(-c.remaining) + " over" : money(c.remaining) + " left"}</span></div>
-      <div class="bar ${barClass(c.available > 0 ? Math.round((c.spent / c.available) * 100) : null)}"><i style="width:${pct}%"></i>${proj != null && proj > pct ? `<b style="left:${proj}%" ${tipAttr(`On pace for <b>${esc(money(c.projected))}</b> by the end of the month`)}></b>` : ""}</div>
+        <div class="spacer"></div>${used != null ? `<span class="b-pct num ${cls}">${onPlan ? "Paid" : used + "%"}</span>` : ""}<span class="num b-left ${over ? "over" : ""}">${over ? money(-c.remaining) + " over" : money(c.remaining) + " left"}</span></div>
+      <div class="bar ${cls}"><i style="width:${pct}%"></i>${proj != null && proj > pct ? `<b style="left:${proj}%" ${tipAttr(`On pace for <b>${esc(money(c.projected))}</b> by the end of the month`)}></b>` : ""}</div>
       <div class="small muted">${money(c.spent)} of ${money(c.available)}${c.carry ? ` · ${c.carry > 0 ? "+" : ""}${money(c.carry)} rolled over` : ""}${c.avg3 && !tooLow ? ` · usually ${money(c.avg3)}` : ""}</div>
       ${tooLow ? `<div class="small warn-t">You usually spend ${money(c.avg3)} here, so this budget may be too low.</div>` : ""}
     </div>`;
@@ -1474,6 +1632,14 @@
             <div class="m-row total"><span>Available to budget</span><span class="num">${money(available)}</span></div>
             <div class="m-row"><span>Your spending budget <button class="btn link sm" id="edit-total">edit</button></span><span class="num">${money(d.budgeted)}</span></div>
             <div class="m-row small muted"><span>includes bills &amp; subscriptions <a href="#/recurring">view</a></span><span class="num">${money(d.bills.expenses)}</span></div>
+            ${d.expected_income > 0 ? (() => {
+              // where the month's income goes: goals, the spending budget, and what's left (or the shortfall)
+              const inc = d.expected_income, g = d.goals_monthly, sp = d.budgeted, rest = inc - g - sp;
+              const tot = Math.max(inc, g + sp);
+              const seg = (v, c, l) => v > 0 ? `<i style="width:${(v / tot) * 100}%;background:${c}" ${tipAttr(`<b>${esc(l)}</b><br>${esc(money(v))}`)}></i>` : "";
+              return `<div class="alloc" aria-label="Where your income goes"><div class="split">${seg(g, "var(--s7)", "Savings goals")}${seg(sp, "var(--s1)", "Spending budget")}${seg(Math.max(0, rest), "var(--good)", "Left over")}${seg(Math.max(0, -rest), "var(--bad)", "Short")}</div>
+                <div class="legend">${g ? `<span style="--c:var(--s7)">Goals ${money(g)}</span>` : ""}<span style="--c:var(--s1)">Budget ${money(sp)}</span>${rest >= 0 ? `<span style="--c:var(--good)">Left over ${money(rest)}</span>` : `<span style="--c:var(--bad)">Short ${money(-rest)}</span>`}</div></div>`;
+            })() : ""}
             ${d.budgeted > available + 1 && d.expected_income > 0 ? `<div class="callout small warn-c">Your budget is ${money(d.budgeted - available)} more than your income${d.goals_monthly ? " after goals" : ""}.</div>`
               : d.expected_income > 0 && available - d.budgeted > 50 ? `<div class="callout small">${money(available - d.budgeted)} a month is left over after your budget. Put it toward savings or a goal.</div>` : ""}
           </div>
@@ -1488,7 +1654,7 @@
         <div class="grid two">
           <div class="card">
             <div class="card-h"><h2>Spending</h2><div class="spacer"></div>
-              ${hasBudget ? `<button class="btn sm" id="wizard">Re-plan</button>` : ""}<button class="btn sm primary" id="add-budget">+ Category budget</button></div>
+              ${hasBudget ? `<button class="btn sm" id="wizard" title="Walk through income, bills and category limits again">Adjust budget</button>` : ""}<button class="btn sm primary" id="add-budget">+ Category budget</button></div>
             ${budgeted.length ? budgeted.map((c) => budgetRow(c, d)).join("") : `<div class="muted small" style="margin-bottom:12px">No category budgets yet. Add one for anything you want to watch closely, like Dining Out or Groceries.</div>`}
             ${hasBudget ? budgetRow({ id: "", name: "Everything else", available: ee.budget, spent: ee.spent, remaining: ee.remaining, carry: 0, avg3: ee.avg3, projected: 0 }, d) : ""}
             ${d.is_current && budgeted.some((c) => c.available > 0 && c.projected > c.spent) ? `<p class="small muted tick-note"><span class="tick-key" aria-hidden="true"></span>The tick on a bar marks where you're on pace to finish the month.</p>` : ""}
@@ -1534,7 +1700,10 @@
       </div>`;
 
     const statsById = Object.fromEntries(d.categories.map((c) => [c.id, c]));
-    $$(".b-row", view).forEach((el) => (el.onclick = () => (el.dataset.id ? editCategoryBudget(statsById[el.dataset.id]) : editTotal(d))));
+    $$(".b-row", view).forEach((el) => {
+      el.onclick = () => (el.dataset.id ? editCategoryBudget(statsById[el.dataset.id]) : editTotal(d));
+      el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
+    });
     $$("#wizard", view).forEach((b) => (b.onclick = () => budgetWizard(d)));
     $("#add-budget").onclick = () => addCategoryBudget(d);
     const ei = $("#edit-income", view); if (ei) ei.onclick = () => editIncome(d);
@@ -1702,78 +1871,65 @@
   }
 
   // ------------------------------------------------------------------ accounts
+  const ACCT_LOOK = { checking: ["banknote", 1], savings: ["coins", 3], credit: ["card", 2], investment: ["trend", 7], loan: ["receipt", 8], cash: ["banknote", 4], other: ["box", 0] };
+  const acctMark = (a) => { const [ic, slot] = ACCT_LOOK[a.type] || ACCT_LOOK.other; return `<span class="cm" style="--c:${slot ? `var(--s${slot})` : "var(--subtle)"}" aria-hidden="true">${catSvg(ic)}</span>`; };
+
   async function renderAccounts(view) {
     const [conns] = await Promise.all([pb.collection("bank_connections").getFullList({ sort: "created" }), loadAccounts()]);
     const byConn = {};
     for (const a of state.accounts) (byConn[a.connection || ""] = byConn[a.connection || ""] || []).push(a);
-
     const moreMenu = (label, items) => `<details class="menu"><summary class="btn sm icon-btn" aria-label="${esc(label)}">${icon("more")}</summary><div class="menu-pop">${items}</div></details>`;
-    const accRow = (a, connected) => `<tr data-id="${a.id}">
-      <td><input class="inline acc-name" value="${esc(a.name)}" aria-label="Account name">${a.institution ? `<div class="small muted">${esc(a.institution)}</div>` : ""}</td>
-      <td><select class="inline acc-type" aria-label="Account type">${ACCOUNT_TYPES.map((t) => `<option value="${t}" ${t === a.type ? "selected" : ""}>${cap(t)}</option>`).join("")}</select></td>
-      <td class="right num">${a.connection ? money(a.balance) : `<input class="inline acc-bal num" type="number" step="0.01" value="${a.balance || 0}" aria-label="Balance" style="width:120px;text-align:right">`}</td>
-      <td class="center"><input type="checkbox" class="acc-onb" aria-label="Count in budget" ${a.on_budget ? "checked" : ""}></td>
-      <td class="center"><input type="checkbox" class="acc-hide" aria-label="Hide from net worth" ${a.hidden ? "checked" : ""}></td>
-      ${connected ? `<td class="center"><input type="checkbox" class="acc-flip" aria-label="Invert amounts" ${a.flip_amounts ? "checked" : ""}></td>` : ""}
-      <td class="right">${moreMenu(`More actions for ${a.name}`, `<button type="button" class="menu-i danger-t acc-del">Delete account…</button>`)}</td>
-    </tr>`;
-    const th = (label, tip) => `<th class="center"><span class="th-tip" ${tipAttr(esc(tip))}>${label}</span></th>`;
-    const accTable = (list, connected) => list && list.length ? `<div class="table-wrap"><table class="acc-t"><thead><tr><th>Account</th><th>Type</th><th class="right">Balance</th>
-      ${th("In budget", "Count this account's transactions in your budget and spending")}
-      ${th("Hide from net worth", "Leave this account out of your net worth")}
-      ${connected ? th("Invert amounts", "Turn on if this bank reports purchases as positive amounts. Applies from the next sync.") : ""}
-      <th><span class="sr-only">Actions</span></th></tr></thead><tbody>${list.map((a) => accRow(a, connected)).join("")}</tbody></table></div>` : `<div class="muted small">No accounts.</div>`;
+    const isDebt = (a) => a.type === "credit" || a.type === "loan";
+
+    const accRow = (a) => `<div class="acc-row" data-id="${a.id}" role="button" tabindex="0" aria-label="Edit ${esc(acctLabel(a))}">
+      ${acctMark(a)}
+      <div class="grow acc-main"><div class="t-name">${esc(acctLabel(a))}</div>
+        <div class="small muted">${esc(cap(a.type || "other"))}${a.institution ? ` · ${esc(a.institution)}` : ""}</div>
+        ${!a.on_budget || a.hidden ? `<div class="acc-tags">${!a.on_budget ? `<span class="pill">Not in budget</span>` : ""}${a.hidden ? `<span class="pill">Hidden from net worth</span>` : ""}</div>` : ""}</div>
+      <div class="right"><div class="acc-bal num">${a.balance < 0 ? "−" : ""}${money(Math.abs(a.balance))}</div>${isDebt(a) ? `<div class="small muted">owed</div>` : ""}</div>
+      <span class="acc-go" aria-hidden="true">›</span>
+    </div>`;
+    const list = (arr) => arr && arr.length ? `<div class="acc-list">${arr.map(accRow).join("")}</div>` : `<div class="muted small">No accounts.</div>`;
+    const sum = (arr) => (arr || []).filter((a) => !a.hidden).reduce((s, a) => s + (a.balance || 0), 0);
 
     view.innerHTML = `
       <div class="stack">
-        <div class="card">
-          <div class="card-h"><h2>Bank connections</h2><div class="spacer"></div>
-            ${conns.length ? `<button class="btn" id="sync-all">↻ Sync now</button>` : ""}
-            <button class="btn primary" id="connect">+ Connect bank</button></div>
-          ${conns.length ? conns.map((c) => `
-            <div class="callout" style="margin-bottom:12px">
-              <div class="row"><b>${esc(c.name)}</b>
-                <span class="pill ${c.status === "ok" ? "ok" : "err"}">${c.status === "ok" ? "Connected" : "Needs attention"}</span>
-                <span class="small muted" title="${c.last_sync ? esc(new Date(c.last_sync.replace(" ", "T")).toLocaleString()) : ""}">${c.last_sync ? "Synced " + ago(c.last_sync) : "Never synced"}</span>
-                <div class="spacer"></div>
-                ${moreMenu("Connection options", `<button type="button" class="menu-i danger-t conn-del" data-id="${c.id}">Disconnect bank…</button>`)}</div>
-              ${c.last_error ? `<div class="small" style="color:var(--${c.status === "ok" ? "muted" : "bad"});margin-top:6px">${esc(c.last_error)}</div>` : ""}
-              <div style="margin-top:10px">${accTable(byConn[c.id], true)}</div>
-            </div>`).join("") : `<div class="muted">Connect your bank through <a href="https://beta-bridge.simplefin.org" target="_blank" rel="noopener">SimpleFIN Bridge</a> to sync balances and transactions automatically, or use manual accounts with CSV import below.</div>`}
-        </div>
+        <div class="row"><p class="muted" style="margin:0;flex:1 1 320px">Your accounts and where their balances come from. Select an account to rename it, change its type, or choose whether it counts in your budget.</p>
+          ${conns.length ? `<button class="btn" id="sync-all">↻ Sync now</button>` : ""}
+          <button class="btn primary" id="connect">+ Connect bank</button></div>
 
-        <div class="card">
-          <div class="card-h"><h2>Manual accounts</h2><div class="spacer"></div>
+        ${conns.map((c) => `
+          <section class="card" aria-label="${esc(c.name)}">
+            <div class="card-h acc-conn"><span class="cm" style="--c:var(--s1)" aria-hidden="true">${catSvg("swap")}</span>
+              <div class="grow"><h2>${esc(c.name)}</h2><div class="small muted" title="${c.last_sync ? esc(new Date(c.last_sync.replace(" ", "T")).toLocaleString()) : ""}">${c.last_sync ? "Synced " + ago(c.last_sync) : "Never synced"} · ${plural((byConn[c.id] || []).length, "account")}</div></div>
+              <span class="pill ${c.status === "ok" ? "ok" : "err"}">${c.status === "ok" ? "Connected" : "Needs attention"}</span>
+              ${moreMenu("Connection options", `<button type="button" class="menu-i danger-t conn-del" data-id="${c.id}">Disconnect bank…</button>`)}</div>
+            ${c.last_error ? `<div class="callout small ${c.status === "ok" ? "" : "cf-warn"}" style="margin-bottom:12px">${esc(c.last_error)}</div>` : ""}
+            ${list(byConn[c.id])}
+          </section>`).join("")}
+
+        ${!conns.length ? `<section class="card acc-empty"><span class="cm" style="--c:var(--s1)" aria-hidden="true">${catSvg("swap")}</span><div class="grow"><b>Connect your bank</b><div class="small muted">Sync balances and transactions every day through <a href="https://beta-bridge.simplefin.org" target="_blank" rel="noopener">SimpleFIN Bridge</a>, or keep manual accounts and import CSV files.</div></div></section>` : ""}
+
+        <section class="card" aria-labelledby="acc-man">
+          <div class="card-h"><div class="grow"><h2 id="acc-man">Manual accounts</h2><div class="small muted">You update these yourself or with a CSV import${byConn[""] && byConn[""].length ? ` · ${money(sum(byConn[""]))} in all` : ""}</div></div>
             <button class="btn" id="import-csv">Import CSV</button>
             <button class="btn primary" id="add-acc">+ Account</button></div>
-          ${accTable(byConn[""], false)}
-        </div>
+          ${list(byConn[""])}
+        </section>
       </div>`;
 
-    const patch = async (id, data) => { try { await pb.collection("accounts").update(id, data); const a = accById(id); if (a) Object.assign(a, data); } catch (err) { fail(err); } };
-    $$("tr[data-id]", view).forEach((tr) => {
-      const id = tr.dataset.id;
-      $(".acc-name", tr).onchange = (e) => patch(id, { name: e.target.value });
-      $(".acc-type", tr).onchange = (e) => patch(id, { type: e.target.value });
-      const bal = $(".acc-bal", tr); if (bal) bal.onchange = (e) => patch(id, { balance: Number(e.target.value) || 0 });
-      $(".acc-onb", tr).onchange = (e) => patch(id, { on_budget: e.target.checked });
-      $(".acc-hide", tr).onchange = (e) => patch(id, { hidden: e.target.checked });
-      const flip = $(".acc-flip", tr); if (flip) flip.onchange = (e) => patch(id, { flip_amounts: e.target.checked });
-      $(".acc-del", tr).onclick = async () => {
-        $$("details.menu[open]").forEach((dd) => dd.removeAttribute("open"));
-        const a = accById(id);
-        if (!(await confirmBox(`Delete “${a ? a.name : "this account"}” and all of its transactions? This can't be undone.`, "Delete account"))) return;
-        try { await pb.collection("accounts").delete(id); route(); } catch (err) { fail(err); }
-      };
+    $$(".acc-row", view).forEach((el) => {
+      el.onclick = () => editAccount(accById(el.dataset.id));
+      el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
     });
     $$(".conn-del", view).forEach((b) => (b.onclick = async () => {
       $$("details.menu[open]").forEach((dd) => dd.removeAttribute("open"));
       if (!(await confirmBox("Disconnect this bank? Its accounts and transaction history stay here as manual accounts.", "Disconnect"))) return;
-      try { await pb.collection("bank_connections").delete(b.dataset.id); route(); } catch (err) { fail(err); }
+      try { await pb.collection("bank_connections").delete(b.dataset.id); toast("Bank disconnected"); route(); } catch (err) { fail(err); }
     }));
     const sa = $("#sync-all");
     if (sa) sa.onclick = async () => {
-      sa.disabled = true; sa.textContent = "Syncing…";
+      sa.disabled = true; sa.classList.add("loading");
       try {
         const r = await api("/api/budget/sync", { method: "POST" });
         toast(`Synced ${plural(r.accounts, "account")}, ${plural(r.new_transactions, "new transaction")}`);
@@ -1784,6 +1940,46 @@
     $("#connect").onclick = simplefinDialog;
     $("#add-acc").onclick = addAccountDialog;
     $("#import-csv").onclick = () => importDialog();
+  }
+
+  // Everything you can change about an account, in one place.
+  function editAccount(a) {
+    if (!a) return;
+    const connected = !!a.connection;
+    const sw = (name, on, title, desc) => `<label class="set-row"><span class="grow"><b>${title}</b><span class="small muted">${desc}</span></span><input type="checkbox" class="sw" name="${name}" ${on ? "checked" : ""}></label>`;
+    modal(acctLabel(a), `
+      <form id="acc-form" class="stack">
+        <div class="sp-head">${acctMark(a)}<div class="grow"><b>${esc(a.institution || (connected ? "Bank account" : "Manual account"))}</b><div class="small muted">${connected ? "Balance updates on every sync" : "You keep this balance up to date"}</div></div><div class="num sp-total">${money(a.balance)}</div></div>
+        <label class="field"><span>Name</span><input name="name" required value="${esc(a.name)}"></label>
+        <div class="form-grid">
+          <label class="field"><span>Type</span><select name="type">${ACCOUNT_TYPES.map((t) => `<option value="${t}" ${t === a.type ? "selected" : ""}>${cap(t)}</option>`).join("")}</select></label>
+          ${connected ? "" : `<label class="field"><span>Balance</span><input name="balance" type="number" step="0.01" value="${a.balance || 0}"></label>`}
+        </div>
+        <div>
+          ${sw("on_budget", a.on_budget, "Count in budget", "Its transactions count toward your budget and spending")}
+          ${sw("in_nw", !a.hidden, "Include in net worth", "Leave off for accounts you track but don't own outright")}
+          ${connected ? sw("flip_amounts", a.flip_amounts, "Invert amounts", "Turn on if this bank reports purchases as positive. Applies from the next sync.") : ""}
+        </div>
+        <div class="actions"><button type="button" class="btn danger" id="acc-del">Delete account…</button><div class="spacer"></div><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
+      </form>`, {
+      onMount: (m, close) => {
+        const form = $("#acc-form", m);
+        form.onsubmit = async (e) => {
+          e.preventDefault();
+          const fd = new FormData(form);
+          const data = { name: String(fd.get("name")).trim(), type: fd.get("type"), on_budget: fd.has("on_budget"), hidden: !fd.has("in_nw") };
+          if (!connected) data.balance = Number(fd.get("balance")) || 0;
+          if (connected) data.flip_amounts = fd.has("flip_amounts");
+          const btn = $("button.primary", form); btn.classList.add("loading");
+          try { await pb.collection("accounts").update(a.id, data); close(); toast("Account saved"); route(); } catch (err) { fail(err); btn.classList.remove("loading"); }
+        };
+        $("#acc-del", m).onclick = async () => {
+          close();
+          if (!(await confirmBox(`Delete “${acctLabel(a)}” and all of its transactions? This can't be undone.`, "Delete account"))) return;
+          try { await pb.collection("accounts").delete(a.id); toast("Account deleted"); route(); } catch (err) { fail(err); }
+        };
+      },
+    });
   }
 
   function simplefinDialog() {
@@ -1970,7 +2166,7 @@
 
   // ------------------------------------------------------------------ cash flow
   // Day-by-day projection of checking: recurring bills and paychecks on their dates plus usual everyday spending.
-  const cfState = { days: 45 };
+  const cfState = { days: 45, whatIf: null };
   const cfAccounts = () => { try { return JSON.parse(localStorage.getItem("keel.cf.accounts") || "null"); } catch (_) { return null; } };
   const cfAccountsParam = () => (cfAccounts() || []).join(",");
   const weekday = (d) => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
@@ -1988,79 +2184,120 @@
       return bindCashflow(view);
     }
     const pts = f.points;
+    // what-if: a one-off amount on a day, applied here only (nothing is saved)
+    const wi = cfState.whatIf && cfState.whatIf.amount ? cfState.whatIf : null;
+    const alt = wi ? pts.map((p) => p.balance + (p.day >= wi.day ? wi.amount : 0)) : null;
+    const altLowI = alt ? alt.reduce((bi, v, i) => (v < alt[bi] ? i : bi), 0) : -1;
     const change = f.end_balance - f.start;
+    const lowI = Math.max(0, pts.findIndex((p) => p.day === f.low.day));
     const lowWhen = f.low.day === f.today ? "today" : `${weekday(f.low.day)} ${prettyDate(f.low.day)}`;
+    const danger = f.below_floor_day || f.low.balance < 0;
     let callout = "";
+    const actions = `<div class="row cf-act"><a class="btn sm" href="#cf-list" data-jump="cf-list">See what's coming up</a><button type="button" class="btn sm" data-jump="cf-floor">Change warning level</button></div>`;
     if (f.below_floor_day) {
       const p = pts.find((x) => x.day === f.below_floor_day);
-      callout = `<div class="callout cf-warn">Your balance is projected to drop to <b>${money(p.balance)}</b> around <b>${esc(prettyDate(f.below_floor_day))}</b>, below your ${money(f.floor)} warning level${f.next_income && f.next_income.day > f.below_floor_day ? `, before your next deposit on ${esc(prettyDate(f.next_income.day))}` : ""}.</div>`;
+      callout = `<div class="callout cf-warn"><b>Heads up:</b> your balance is projected to drop to <b>${money(p.balance)}</b> around <b>${esc(prettyDate(f.below_floor_day))}</b>, below your ${money(f.floor)} warning level${f.next_income && f.next_income.day > f.below_floor_day ? `, before your next deposit on ${esc(prettyDate(f.next_income.day))}` : ""}. Moving a bill, trimming everyday spending or a transfer in would cover it.${actions}</div>`;
     } else if (f.low.balance < 0) {
-      callout = `<div class="callout cf-warn">Your balance is projected to go negative around <b>${esc(prettyDate(pts.find((x) => x.balance < 0).day))}</b>.</div>`;
+      callout = `<div class="callout cf-warn"><b>Heads up:</b> your balance is projected to go negative around <b>${esc(prettyDate(pts.find((x) => x.balance < 0).day))}</b>.${actions}</div>`;
     } else if (!f.has_income) {
       callout = `<div class="callout small">No regular paycheck was found, so deposits that aren't recurring are averaged in as about ${money(f.other_in_per_day)} a day. <a href="#/recurring">Add your paycheck</a> for a sharper forecast.</div>`;
     }
     const refs = [];
     if (f.floor > 0) refs.push({ v: f.floor, label: `Warning ${compact(f.floor)}` });
-    if (f.low.balance < 0) refs.push({ v: 0, label: "$0" });
+    if (f.low.balance < 0 || (alt && alt[altLowI] < 0)) refs.push({ v: 0, label: "$0" });
+    const series = [{ values: pts.map((p) => p.balance), color: "var(--s1)", area: true }];
+    if (alt) series.push({ values: alt, color: "var(--s7)", dashed: true });
     const chart = lineChart({
-      series: [{ values: pts.map((p) => p.balance), color: "var(--s1)", area: true }],
-      n: pts.length, height: 240, yMinZero: false,
+      series, n: pts.length, height: 240, yMinZero: false,
       xLabel: (i) => (i === 0 ? "Today" : prettyDate(pts[i].day)),
-      ariaLabel: `Projected balance over the next ${f.days} days`,
+      ariaLabel: `Projected balance over the next ${f.days} days. Lowest ${money(f.low.balance)} on ${lowWhen}.`,
       refs,
+      marks: [{ i: lowI, v: f.low.balance, label: `Low ${f.low.balance < 0 ? "−" : ""}$${Math.round(Math.abs(f.low.balance)).toLocaleString()}`, cls: danger ? "bad" : "" }],
       tipFor: (i) => {
         const p = pts[i];
-        return `<b>${i === 0 ? "Today" : esc(`${weekday(p.day)} ${prettyDate(p.day)}`)}</b><br>${money(p.balance)}${p.events.map((e) => `<br><span class="${e.amount > 0 ? "pos" : ""}">${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}</span> ${esc(e.name)}`).join("")}`;
+        return `<b>${i === 0 ? "Today" : esc(`${weekday(p.day)} ${prettyDate(p.day)}`)}</b><br>${money(p.balance)} projected${alt ? `<br><span class="muted">With what-if: ${money(alt[i])}</span>` : ""}${p.events.map((e) => `<br><span class="${e.amount > 0 ? "pos" : ""}">${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}</span> ${esc(e.name)}`).join("")}`;
       },
     });
     // event days marked under the chart: paydays and bills
     const marks = pts.map((p, i) => p.events.length ? `<i class="${p.events.some((e) => e.amount > 0) ? "in" : "out"}" style="left:${((52 + (i / (pts.length - 1)) * 574) / 640 * 100).toFixed(2)}%" ${tipAttr(`<b>${esc(prettyDate(p.day))}</b>${p.events.map((e) => `<br>${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))} ${esc(e.name)}`).join("")}`)}></i>` : "").join("");
     const rows = pts.filter((p) => p.events.length).map((p) => `
-      <div class="cf-day"><div class="cf-date"><b>${esc(weekday(p.day))}</b><span>${esc(prettyDate(p.day))}</span></div>
+      <div class="cf-day ${p.day === f.low.day ? "is-low" : ""}"><div class="cf-date"><b>${esc(weekday(p.day))}</b><span>${esc(prettyDate(p.day))}</span></div>
         <div class="grow">${p.events.map((e) => `<div class="cf-ev"><span>${esc(e.name)}${e.late ? ' <span class="pill warn-p">Not posted yet</span>' : ""}</span><span class="spacer"></span><span class="num ${e.amount > 0 ? "pos" : ""}">${e.amount > 0 ? "+" : "−"}${money(Math.abs(e.amount))}</span></div>`).join("")}</div>
         <div class="cf-bal num ${p.balance < f.floor || p.balance < 0 ? "negc" : "muted"}" ${tipAttr("Projected balance at the end of the day")}><span class="cf-bl">Balance </span>${money(p.balance)}</div></div>`).join("");
+    const wiDay = wi ? wi.day : ymd(new Date(Date.now() + 7 * 86400000));
+    const wiResult = alt ? (() => {
+      const lo = alt[altLowI], d0 = pts[altLowI].day;
+      const below = (f.floor > 0 && lo < f.floor) || lo < 0;
+      return `<div class="callout small ${below ? "cf-warn" : ""}" style="margin-top:12px">With this, your lowest point would be <b>${money(lo)}</b> on ${esc(prettyDate(d0))}${below ? (lo < 0 ? ", below zero." : `, under your ${money(f.floor)} warning level.`) : `, ${money(lo - f.low.balance)} ${lo >= f.low.balance ? "above" : "below"} the forecast.`}</div>`;
+    })() : "";
     view.innerHTML = `
       <div class="stack">
         ${head}
-        <div class="grid kpis">
+        <div class="grid kpis cf-kpis">
+          <div class="card kpi cf-low ${danger ? "danger" : ""}"><div class="label">Lowest point</div><div class="value num ${danger ? "negc" : ""}">${money(f.low.balance)}</div><div class="sub">${esc(cap(lowWhen))}${f.before_payday && f.before_payday.day !== f.low.day && f.next_income ? `<br>${money(f.before_payday.balance)} before your ${esc(prettyDate(f.next_income.day))} deposit` : ""}</div></div>
           <div class="card kpi"><div class="label">Balance now</div><div class="value num">${money(f.start)}</div><div class="sub">${esc(f.accounts.map(acctLabel).join(", "))}</div></div>
-          <div class="card kpi"><div class="label">Lowest point</div><div class="value num ${f.below_floor_day || f.low.balance < 0 ? "negc" : ""}">${money(f.low.balance)}</div><div class="sub">${esc(cap(lowWhen))}${f.before_payday && f.before_payday.day !== f.low.day && f.next_income ? `<br>${money(f.before_payday.balance)} before your ${esc(prettyDate(f.next_income.day))} deposit` : ""}</div></div>
           <div class="card kpi"><div class="label">In ${f.days} days</div><div class="value num">${money(f.end_balance)}</div><div class="sub">${change === 0 ? "No change" : signed(change)} from today</div></div>
         </div>
         ${callout}
-        <div class="card">
-          <div class="card-h"><h2>Projected balance</h2><div class="spacer"></div><div class="legend" style="margin:0"><span class="mk-in">Deposit</span><span class="mk-out">Bill</span></div></div>
+        <section class="card" aria-labelledby="cf-chart-h">
+          <div class="card-h"><div><h2 id="cf-chart-h">Projected balance</h2><div class="small muted">A projection from your bills, paychecks and usual spending, not a guarantee</div></div><div class="spacer"></div>
+            <div class="legend" style="margin:0"><span class="mk-in">Deposit</span><span class="mk-out">Bill</span>${alt ? `<span class="dash" style="--c:var(--s7)">What-if</span>` : ""}</div></div>
           ${chart}
           <div class="cf-marks" aria-hidden="true">${marks}</div>
-        </div>
+        </section>
         <div class="grid two cf-cols">
-          <div class="card">
-            <div class="card-h"><h2>Coming up</h2><div class="spacer"></div><span class="small muted">+${money(f.income_total)} in · −${money(f.bills_total)} bills</span></div>
+          <section class="card" id="cf-list" aria-labelledby="cf-list-h">
+            <div class="card-h"><h2 id="cf-list-h">Coming up</h2><div class="spacer"></div><span class="small muted">+${money(f.income_total)} in · −${money(f.bills_total)} bills</span></div>
             ${rows || `<div class="muted small">No bills or paychecks expected in this window.</div>`}
-          </div>
+          </section>
           <div class="stack">
-            <div class="card">
-              <div class="card-h"><h2>How it's worked out</h2></div>
+            <section class="card" aria-labelledby="cf-wi-h">
+              <div class="card-h"><h2 id="cf-wi-h">What if…</h2></div>
+              <p class="small muted" style="margin-top:0">Try a one-off expense or deposit and see how it changes the forecast. Nothing is saved.</p>
+              <form id="cf-wi" class="cf-wi">
+                <select name="dir" aria-label="Expense or deposit"><option value="-1" ${!wi || wi.amount < 0 ? "selected" : ""}>I spend</option><option value="1" ${wi && wi.amount > 0 ? "selected" : ""}>I receive</option></select>
+                <input name="amt" type="number" min="0" step="1" placeholder="Amount" aria-label="Amount" required value="${wi ? Math.abs(wi.amount) : ""}">
+                <input name="day" type="date" aria-label="On" min="${esc(f.today)}" value="${esc(wiDay)}">
+                <button class="btn primary">Try it</button>${wi ? `<button type="button" class="btn" id="cf-wi-clear">Clear</button>` : ""}
+              </form>
+              ${wiResult}
+            </section>
+            <section class="card" aria-labelledby="cf-how-h">
+              <div class="card-h"><h2 id="cf-how-h">How it's worked out</h2></div>
               <div class="m-row"><span>Balance now</span><span class="num">${money(f.start)}</span></div>
-              <div class="m-row"><span>Paychecks and deposits</span><span class="num pos">+${money(f.income_total)}</span></div>
-              <div class="m-row"><span>Bills and subscriptions</span><span class="num">−${money(f.bills_total)}</span></div>
-              <div class="m-row"><span>Everyday spending <span class="muted small">about ${money(f.spend_per_day)}/day</span></span><span class="num">−${money(f.spend_total)}</span></div>
-              ${f.other_in_per_day ? `<div class="m-row"><span>Other deposits <span class="muted small">about ${money(f.other_in_per_day)}/day</span></span><span class="num pos">+${money(f.other_in_per_day * f.days)}</span></div>` : ""}
+              <div class="m-row"><span>Paychecks and deposits <span class="muted small">scheduled</span></span><span class="num pos">+${money(f.income_total)}</span></div>
+              <div class="m-row"><span>Bills and subscriptions <span class="muted small">scheduled</span></span><span class="num">−${money(f.bills_total)}</span></div>
+              <div class="m-row"><span>Everyday spending <span class="muted small">estimated, about ${money(f.spend_per_day)}/day</span></span><span class="num">−${money(f.spend_total)}</span></div>
+              ${f.other_in_per_day ? `<div class="m-row"><span>Other deposits <span class="muted small">estimated, about ${money(f.other_in_per_day)}/day</span></span><span class="num pos">+${money(f.other_in_per_day * f.days)}</span></div>` : ""}
               <div class="m-row total"><span>In ${f.days} days</span><span class="num">${money(f.end_balance)}</span></div>
               <p class="small muted" style="margin:10px 0 0">Everyday spending is what usually leaves these accounts outside your recurring bills (card payments and transfers out included), averaged over the last ${plural(f.lookback_days, "day")}. Bills charged to a credit card are left out, since they're paid through the card payment.</p>
-            </div>
-            <div class="card">
-              <div class="card-h"><h2>Low balance warning</h2></div>
+            </section>
+            <section class="card" aria-labelledby="cf-floor-h">
+              <div class="card-h"><h2 id="cf-floor-h">Low balance warning</h2></div>
               <form id="cf-floor" class="stack">
                 <label class="field"><span>Warn me if it's projected below ($)</span><input name="floor" type="number" min="0" step="1" value="${f.floor || 0}"></label>
-                <label class="check"><input type="checkbox" name="alerts" ${me.cash_alerts ? "checked" : ""} ${state.status.smtp ? "" : "disabled"}> Email me when that's coming up in the next 2 weeks${state.status.smtp ? "" : " (needs SMTP)"}</label>
-                <div><button class="btn primary sm">Save</button></div>
+                <label class="set-row" style="border:0;padding:0"><span class="grow"><b>Email me</b><span class="small muted">When it's coming up in the next 2 weeks${state.status.smtp ? "" : " (needs email set up)"}</span></span><input type="checkbox" class="sw" name="alerts" ${me.cash_alerts ? "checked" : ""} ${state.status.smtp ? "" : "disabled"}></label>
+                <div><button class="btn primary sm">Save warning</button></div>
               </form>
-            </div>
+            </section>
           </div>
         </div>
       </div>`;
     bindCashflow(view);
+    $$("[data-jump]", view).forEach((b) => (b.onclick = (e) => {
+      e.preventDefault();
+      const el = $("#" + b.dataset.jump); if (!el) return;
+      el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      const inp = $("input", el); if (b.dataset.jump === "cf-floor" && inp) setTimeout(() => inp.focus({ preventScroll: true }), 300);
+    }));
+    $("#cf-wi").onsubmit = (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const amt = Math.abs(Number(fd.get("amt")) || 0) * Number(fd.get("dir"));
+      cfState.whatIf = amt ? { amount: amt, day: fd.get("day") || f.today } : null;
+      route();
+    };
+    const wc = $("#cf-wi-clear"); if (wc) wc.onclick = () => { cfState.whatIf = null; route(); };
     $("#cf-floor").onsubmit = async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -2131,10 +2368,13 @@
           <div class="card kpi"><div class="label">Needed to stay on schedule</div><div class="value num">${money(t.per_month)}<span class="muted" style="font-size:14px;font-weight:500">/mo</span></div><div class="sub">${t.per_month ? `About ${money(t.per_month / 30.44)} a day` : "No dated goals left"}</div></div>
           <div class="card kpi"><div class="label">On track</div><div class="value num">${dated ? `${onTrack} of ${dated}` : "—"}</div><div class="sub">${open.length ? `${plural(open.length, "goal")} in progress` : "Every goal reached"}</div></div>
         </div>
-        <div class="grid goals-grid">${goals.map(goalCard).join("")}</div>` : `<div class="card empty">No goals yet.</div>`}
+        <div class="grid goals-grid">${goals.map(goalCard).join("")}</div>` : `<div class="card empty-cta"><span class="cm" style="--c:var(--s3)" aria-hidden="true">${catSvg("target")}</span>
+          <div><h2>Start your first goal</h2><p class="muted">Pick a target and a date. Keel works out what to put away each day, and if you link a savings account it follows the balance on every sync.</p>
+          <div class="row" style="gap:8px;flex-wrap:wrap">${["Emergency fund", "Vacation", "New car"].map((n) => `<button type="button" class="btn sm g-idea" data-name="${n}">${n}</button>`).join("")}</div></div></div>`}
       </div>`;
     bindGoalCards(view);
     $("#add-goal").onclick = () => editGoal(null);
+    $$(".g-idea", view).forEach((b) => (b.onclick = () => editGoal(null, b.dataset.name)));
   }
 
   // Detail: where you are, what it takes per day, your actual pace, and the path to the target.
@@ -2155,6 +2395,16 @@
     const need = g.status === "done" ? stat("Need per day", money(0), "You've reached it")
       : g.per_day != null ? stat("Need per day", money(g.per_day), `${money(g.per_week)}/week · ${money(g.per_month)}/month`)
       : stat("Need per day", "—", g.target_date ? "The target date has passed" : "Add a target date to see this");
+    const where = g.linked ? ` into ${esc(acctLabel(g.account))}` : "";
+    let next;
+    if (g.status === "done") next = `<b>You've reached it.</b> Raise the target or start a new goal when you're ready.`;
+    else if (g.per_day != null) {
+      const gap = g.pace_per_day == null ? null : g.per_day - g.pace_per_day;
+      next = `<b>Put about ${money(g.per_day)} a day (${money(g.per_month)} a month)${where}</b> to reach it by ${esc(fullDate(g.target_date))}.`
+        + (gap == null ? "" : gap > 0.01 ? ` That's ${money(gap * 30.44)} a month more than you've been adding lately.` : ` You've been adding enough lately, so keep it up.`);
+    } else if (g.target_date) next = `<b>The target date has passed.</b> Pick a new date to see what to put away each day.`;
+    else next = g.projected_date ? `<b>At your current pace you'll get there around ${esc(fullDate(g.projected_date))}.</b> Add a target date to see what it takes to get there sooner.` : `<b>Add a target date</b> to see what to put away each day.`;
+    const behind = g.status === "behind";
     const months = (g.months || []).filter((x) => x.change != null);
     const mMax = Math.max(1, ...months.map((x) => Math.abs(x.change)));
     modal(g.name, `
@@ -2164,15 +2414,16 @@
           <div class="bar ${g.status === "done" ? "good" : ""}" style="margin:12px 0 6px"><i style="width:${pct}%"></i></div>
           <div class="small muted">${pct}% · ${g.linked ? `Follows the balance of ${esc(acctLabel(g.account))}` : "Tracked by hand"}${g.since_start ? ` · ${signed(g.since_start, true)} since ${esc(fullDate(g.start_day))}` : ""}</div>
         </div>
+        <div class="callout g-next ${behind ? "cf-warn" : g.status === "done" ? "good" : ""}"><div class="label">${g.status === "done" ? "Done" : "What to do next"}</div>${next}</div>
+        ${g.linked && g.history && g.history.length > 1 ? `<div><div class="kind-h">Balance and the path to your target</div><div id="g-chart"></div></div>` : ""}
         <div class="h-stats g-stats">
           ${stat("Left to go", money(g.left))}
           ${need}
           ${stat("Your pace", g.pace_per_day == null ? "—" : `${g.pace_per_day < 0 ? "−" : ""}${money(Math.abs(g.pace_per_day))}<span class="muted" style="font-size:13px;font-weight:500">/day</span>`, paceSub)}
           ${stat("Projected finish", finish, finishSub)}
         </div>
-        ${g.linked && g.history && g.history.length > 1 ? `<div><div class="kind-h">Balance and the path to your target</div><div id="g-chart"></div></div>` : ""}
-        ${months.length ? `<div><div class="kind-h row"><span>Added each month</span><div class="spacer"></div><span class="small muted">Net change in the account</span></div>
-          <div class="g-months">${months.map((x) => `<div class="g-month" ${tipAttr(`<b>${esc(monthLabel(x.month))}</b><br>${x.change >= 0 ? "Added" : "Took out"} ${money(Math.abs(x.change))}`)}><span class="small muted">${esc(shortMonth(x.month))}</span><div class="g-track"><i class="${x.change < 0 ? "neg" : ""}" style="width:${Math.max(x.change ? 2 : 0, (Math.abs(x.change) / mMax) * 100)}%"></i></div><span class="num small ${x.change < 0 ? "negc" : x.change ? "" : "muted"}">${x.change ? `${x.change < 0 ? "−" : "+"}${money(Math.abs(x.change))}` : "No change"}</span></div>`).join("")}</div></div>` : ""}
+        ${months.length ? `<details class="g-more"><summary class="kind-h row"><span>Added each month</span><div class="spacer"></div><span class="small muted">Net change in the account</span></summary>
+          <div class="g-months">${months.map((x) => `<div class="g-month" ${tipAttr(`<b>${esc(monthLabel(x.month))}</b><br>${x.change >= 0 ? "Added" : "Took out"} ${money(Math.abs(x.change))}`)}><span class="small muted">${esc(shortMonth(x.month))}</span><div class="g-track"><i class="${x.change < 0 ? "neg" : ""}" style="width:${Math.max(x.change ? 2 : 0, (Math.abs(x.change) / mMax) * 100)}%"></i></div><span class="num small ${x.change < 0 ? "negc" : x.change ? "" : "muted"}">${x.change ? `${x.change < 0 ? "−" : "+"}${money(Math.abs(x.change))}` : "No change"}</span></div>`).join("")}</div></details>` : ""}
         ${!g.linked && g.status !== "done" ? `<form class="row" id="g-add"><input type="number" step="0.01" name="amt" placeholder="Amount" aria-label="Amount to add" style="max-width:160px" required><button class="btn">Add money</button><span class="small muted">Or link this goal to an account to track it automatically.</span></form>` : ""}
         <div class="actions"><button type="button" class="btn" id="g-edit">Edit goal</button><div class="spacer"></div><button type="button" class="btn primary" data-close>Done</button></div>
       </div>`, {
@@ -2242,9 +2493,9 @@
     return chart + `<div class="row" style="margin-top:4px;gap:12px;flex-wrap:wrap"><div class="legend" style="margin:0">${legend.join("")}</div>${est ? `<span class="small muted">Older balances are estimated from transactions.</span>` : ""}</div>`;
   }
 
-  function editGoal(g) {
+  function editGoal(g, name = "") {
     const isNew = !g;
-    g = g || { name: "", target: "", saved: 0, target_date: "", account: "" };
+    g = g || { name, target: "", saved: 0, target_date: "", account: "" };
     const accts = (state.accounts || []).filter((a) => !a.hidden && GOAL_ACCOUNT_TYPES[a.type || "other"]);
     const savings = accts.find((a) => a.type === "savings");
     const selAcct = isNew ? (savings ? savings.id : "") : g.account || "";
@@ -2302,54 +2553,95 @@
       pb.collection("rules").getFullList({ sort: "pattern" }),
       loadCategories(),
     ]);
+    const theme = getTheme();
+    const smtp = state.status.smtp;
+    // a setting with its explanation on the left and a switch on the right
+    const sw = (name, on, title, desc) => `<label class="set-row"><span class="grow"><b>${title}</b>${desc ? `<span class="small muted">${desc}</span>` : ""}</span><input type="checkbox" class="sw" name="${name}" ${on ? "checked" : ""}></label>`;
+    const link = (href, ic, title, desc) => `<a class="set-link" href="${href}">${icon(ic)}<span class="grow"><b>${title}</b><span class="small muted">${desc}</span></span><span class="muted" aria-hidden="true">›</span></a>`;
     view.innerHTML = `
-      <div class="grid two">
+      <div class="grid two top-align">
         <div class="stack">
-          ${installCard()}
-          <div class="card">
-            <div class="card-h"><h2>Email alerts</h2><div class="spacer"></div><span class="pill ${state.status.smtp ? "ok" : "err"}">${state.status.smtp ? "SMTP connected" : "SMTP not configured"}</span></div>
-            ${state.status.smtp ? "" : `<p class="small muted">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
-            <form id="prefs" class="stack">
-              <label class="field"><span>Name</span><input name="name" value="${esc(me.name)}"></label>
-              <label class="check"><input type="checkbox" name="alerts_enabled" ${me.alerts_enabled ? "checked" : ""}> Email me when a category nears or passes its budget</label>
-              <div class="form-grid">
+          <section class="card" aria-labelledby="set-ap">
+            <div class="card-h"><h2 id="set-ap">Appearance</h2></div>
+            <div class="set-row"><span class="grow"><b>Theme</b><span class="small muted">System follows your device's light or dark setting.</span></span>
+              <div class="seg" role="radiogroup" aria-label="Theme">${[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button type="button" role="radio" aria-checked="${theme === k}" data-theme-pick="${k}" class="${theme === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+          </section>
+
+          <section class="card" aria-labelledby="set-no">
+            <div class="card-h"><h2 id="set-no">Notifications</h2><div class="spacer"></div><span class="pill ${smtp ? "ok" : "err"}">${smtp ? "Email ready" : "Email not set up"}</span></div>
+            ${smtp ? "" : `<p class="small muted" style="margin-top:0">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
+            <form id="prefs">
+              ${sw("alerts_enabled", me.alerts_enabled, "Budget alerts", "When a category nears or passes its budget")}
+              <div class="form-grid set-sub">
                 <label class="field"><span>Warn at (% of budget)</span><input name="alert_threshold" type="number" min="1" max="200" value="${me.alert_threshold || 90}"></label>
                 <label class="field"><span>Large transaction alert ($)</span><input name="large_txn_threshold" type="number" min="0" step="1" value="${me.large_txn_threshold || 0}"></label>
               </div>
-              <label class="check"><input type="checkbox" name="weekly_digest" ${me.weekly_digest ? "checked" : ""}> Weekly summary email</label>
-              <label class="check"><input type="checkbox" name="bill_reminders" ${me.bill_reminders ? "checked" : ""}> Email me 3 days before a bill or subscription is due</label>
-              <label class="check"><input type="checkbox" name="cash_alerts" ${me.cash_alerts ? "checked" : ""}> Email me when checking is projected to drop below <a href="#/cashflow">my warning level</a>${me.cash_floor ? ` (${money(me.cash_floor)})` : ""}</label>
-              <label class="check"><input type="checkbox" name="update_notes" ${me.update_notes ? "checked" : ""}> Show what's new when Keel updates (top-right popup)</label>
-              <div class="row"><button class="btn primary">Save</button><button type="button" class="btn" id="digest-now" ${state.status.smtp ? "" : "disabled"}>Send me a summary now</button></div>
+              ${sw("bill_reminders", me.bill_reminders, "Bill reminders", "3 days before a bill or subscription is due")}
+              ${sw("cash_alerts", me.cash_alerts, "Low balance", `When checking is projected to drop below <a href="#/cashflow">your warning level</a>${me.cash_floor ? ` (${money(me.cash_floor)})` : ""}`)}
+              ${sw("weekly_digest", me.weekly_digest, "Weekly summary", "A short recap of your week by email")}
+              ${sw("update_notes", me.update_notes, "What's new", "A small popup after Keel updates")}
+              <div class="row" style="margin-top:16px"><button class="btn primary">Save notifications</button><button type="button" class="btn" id="digest-now" ${smtp ? "" : 'disabled title="Needs email set up"'}>Send a summary now</button></div>
             </form>
-          </div>
-          <div class="card">
-            <div class="card-h"><h2>Account</h2></div>
-            <p class="small muted" style="margin-top:0">Signed in as ${esc(me.email)}${me.verified ? "" : " (unverified)"}. Running Keel v${esc(state.status.version)}${state.status.released ? ` (${esc(state.status.released)})` : ""}.</p>
-            <div class="row">
-              ${state.status.smtp ? `<button class="btn" id="reset-pw">Email me a password reset link</button>` : ""}
-              ${state.status.smtp && !me.verified ? `<button class="btn" id="verify">Resend verification</button>` : ""}
-              <button class="btn danger" id="logout">Sign out</button>
+          </section>
+
+          <section class="card" aria-labelledby="set-pr">
+            <div class="card-h"><h2 id="set-pr">Profile</h2></div>
+            <form id="profile" class="stack">
+              <label class="field"><span>Name</span><div class="row" style="flex-wrap:nowrap"><input name="name" value="${esc(me.name)}" class="grow"><button class="btn">Save</button></div></label>
+              <div class="set-row" style="border:0;padding-bottom:0"><span class="grow"><b>${esc(me.email)}</b><span class="small muted">${me.verified ? "Verified" : "Not verified yet"} · Keel v${esc(state.status.version)}${state.status.released ? ` (${esc(state.status.released)})` : ""}</span></span></div>
+            </form>
+            <div class="row" style="margin-top:16px">
+              ${smtp ? `<button class="btn" id="reset-pw">Email me a password reset link</button>` : ""}
+              ${smtp && !me.verified ? `<button class="btn" id="verify">Resend verification</button>` : ""}
+              <div class="spacer"></div><button class="btn danger" id="logout">Sign out</button>
             </div>
-          </div>
+          </section>
         </div>
-        <div class="card">
-          <div class="card-h"><h2>Categorization rules</h2><div class="spacer"></div><button class="btn" id="run-rules">Apply to uncategorized</button><button class="btn primary" id="add-rule">+ Rule</button></div>
-          <p class="small muted" style="margin-top:0">Rules come first: any transaction whose description or payee contains the text gets that category. After that, Keel uses the categories you have picked by hand for each merchant, then its built-in list of common merchants.</p>
-          ${rules.length ? `<table><tbody>${rules.map((r) => { const c = catById(r.category); return `<tr><td class="code">${esc(r.pattern)}</td><td>→ ${c ? catLabel(c) : "?"}</td><td class="right"><button class="btn sm danger rule-del" data-id="${r.id}">Remove</button></td></tr>`; }).join("")}</tbody></table>` : `<div class="empty">No rules yet. Tip: when you change a transaction's category you'll be offered a rule.</div>`}
+
+        <div class="stack">
+          <section class="card" aria-labelledby="set-ru">
+            <div class="card-h"><h2 id="set-ru">Categorization rules</h2><div class="spacer"></div><button class="btn sm" id="run-rules">Apply now</button><button class="btn sm primary" id="add-rule">+ Rule</button></div>
+            <p class="small muted" style="margin-top:0">A transaction whose description or payee contains the text gets that category. After rules, Keel uses what you've picked by hand for each merchant, then its list of common merchants.</p>
+            ${rules.length ? `<div class="rule-list">${rules.map((r) => { const c = catById(r.category); return `<div class="rule"><span class="code">${esc(r.pattern)}</span><span class="muted" aria-hidden="true">→</span><span class="grow">${c ? catLabel(c) : "?"}</span><button class="btn sm danger rule-del" data-id="${r.id}" aria-label="Remove rule ${esc(r.pattern)}">Remove</button></div>`; }).join("")}</div>`
+              : `<div class="empty small">No rules yet. When you change a transaction's category, Keel offers to make one.</div>`}
+          </section>
+          <section class="card" aria-labelledby="set-el">
+            <div class="card-h"><h2 id="set-el">More settings</h2></div>
+            ${link("#/budget", "budget", "Categories and budgets", "Add, rename or archive categories; set monthly limits")}
+            ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV")}
+            ${link("#/cashflow", "cashflow", "Low balance warning", me.cash_floor ? `Warns below ${money(me.cash_floor)}` : "Not set")}
+          </section>
+          ${installCard()}
         </div>
       </div>`;
 
+    $$("[data-theme-pick]", view).forEach((b) => (b.onclick = () => {
+      const t = b.dataset.themePick;
+      try { if (t === "system") localStorage.removeItem(THEME_KEY); else localStorage.setItem(THEME_KEY, t); } catch (_) {}
+      applyTheme(t);
+      $$("[data-theme-pick]", view).forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); });
+      toast(`Theme: ${b.textContent}`);
+    }));
     $("#prefs").onsubmit = async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const btn = $("button.primary", e.target); btn.classList.add("loading");
       try {
         const saved = await pb.collection("users").update(me.id, {
-          name: fd.get("name"), alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"), bill_reminders: fd.has("bill_reminders"), cash_alerts: fd.has("cash_alerts"),
+          alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"), bill_reminders: fd.has("bill_reminders"), cash_alerts: fd.has("cash_alerts"),
           alert_threshold: Number(fd.get("alert_threshold")) || 90, large_txn_threshold: Number(fd.get("large_txn_threshold")) || 0,
         });
         pb.authStore.save(pb.authStore.token, saved);
-        toast("Preferences saved");
+        toast("Notifications saved");
+      } catch (err) { fail(err); }
+      btn.classList.remove("loading");
+    };
+    $("#profile").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await saveMe({ name: new FormData(e.target).get("name") });
+        toast("Name saved");
+        const who = $(".side .who"); if (who) who.textContent = pb.authStore.record.name || pb.authStore.record.email;
       } catch (err) { fail(err); }
     };
     const ia = $("#install-app"); if (ia) ia.onclick = runInstall;
@@ -2359,7 +2651,10 @@
     const vf = $("#verify"); if (vf) vf.onclick = async () => { try { await pb.collection("users").requestVerification(me.email); toast("Verification email sent"); } catch (err) { fail(err); } };
     $("#add-rule").onclick = () => createRuleDialog("", "");
     $("#run-rules").onclick = async () => { try { const r = await api("/api/budget/apply-rules", { method: "POST" }); toast(`Categorized ${plural(r.updated, "transaction")}`); } catch (err) { fail(err); } };
-    $$(".rule-del", view).forEach((b) => (b.onclick = async () => { try { await pb.collection("rules").delete(b.dataset.id); route(); } catch (err) { fail(err); } }));
+    $$(".rule-del", view).forEach((b) => (b.onclick = async () => {
+      if (!(await confirmBox(`Remove the rule for “${b.closest(".rule").querySelector(".code").textContent}”? Transactions it already filed keep their category.`, "Remove rule"))) return;
+      try { await pb.collection("rules").delete(b.dataset.id); toast("Rule removed"); route(); } catch (err) { fail(err); }
+    }));
   }
 
   // ------------------------------------------------------------------ update notes
