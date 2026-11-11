@@ -58,9 +58,11 @@ const SHOTS = {
     S("15-split", "#/transactions", `const s = document.querySelector('#tcat'); s.value = '__split'; s.onchange({ target: s }); await sleep(1200);
       document.querySelector('.tx-row').click(); await sleep(700); document.querySelector('#split-edit').click(); await sleep(800);`),
     S("16-settings", "#/settings"),
+    S("18-reports", "#/reports", `document.querySelector('#mprev').click(); await sleep(1500);`),
+    S("19-reports-year", "#/reports", `document.querySelector('[data-kind="year"]').click(); await sleep(1500);`),
   ],
 };
-const DARK = ["03-overview", "06-spending", "10-cash-flow", "14-goal-detail"];
+const DARK = ["03-overview", "06-spending", "10-cash-flow", "14-goal-detail", "19-reports-year"];
 const PHONE_SKIP = [];
 
 // ---- tiny CDP client

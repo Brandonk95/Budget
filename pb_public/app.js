@@ -86,6 +86,7 @@
     recurring: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     subscriptions: '<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
     transactions: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    reports: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 18v-2"/><path d="M12 18v-4"/><path d="M16 18v-6"/>',
     cashflow: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
     networth: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
     accounts: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
@@ -363,6 +364,7 @@
     budget: { title: "Budget", render: renderBudget, month: true, main: true },
     transactions: { title: "Transactions", render: renderTransactions, month: true, main: true },
     spending: { title: "Spending", render: renderSpending, month: true, main: true },
+    reports: { title: "Reports", render: renderReports, month: true },
     recurring: { title: "Recurring", render: renderRecurring, month: true },
     subscriptions: { title: "Recurring", hidden: true, render: () => { recState.tab = "subscriptions"; history.replaceState(null, "", "#/recurring"); return route(); } },
     cashflow: { title: "Cash flow", render: renderCashflow },
@@ -408,7 +410,7 @@
     const r = currentRoute();
     const root = $("#modal-root");
     root.innerHTML = `<div class="modal-bg sheet-bg"><div class="modal sheet" role="dialog" aria-modal="true" aria-label="More pages">
-      <nav class="sheet-nav">${[["Plan", ["recurring", "cashflow", "goals"]], ["Money", ["networth", "accounts"]], ["You", ["settings"]]].map(([h, ks]) => `<div class="sheet-h">${h}</div>${ks.filter((k) => ROUTES[k]).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}">${icon(k)}${ROUTES[k].title}</a>`).join("")}`).join("")}</nav>
+      <nav class="sheet-nav">${[["Plan", ["recurring", "cashflow", "goals"]], ["Money", ["reports", "networth", "accounts"]], ["You", ["settings"]]].map(([h, ks]) => `<div class="sheet-h">${h}</div>${ks.filter((k) => ROUTES[k]).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}">${icon(k)}${ROUTES[k].title}</a>`).join("")}`).join("")}</nav>
       <div class="foot">${esc(pb.authStore.record.email)} · Keel v${esc(state.status.version || "")}</div></div></div>`;
     const bg = $(".modal-bg", root);
     const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
@@ -934,6 +936,129 @@
       $$("[data-i]", dw).forEach((el) => { el.addEventListener("mouseenter", () => hi(el.dataset.i)); el.addEventListener("mouseleave", () => hi(null)); el.addEventListener("focus", () => hi(el.dataset.i)); el.addEventListener("blur", () => hi(null)); });
       $$(".d-seg.click", dw).forEach((el) => el.addEventListener("click", () => { const it = items[+el.dataset.i]; if (it && it.id != null) goCat(it.id); }));
     }
+  }
+
+  // ------------------------------------------------------------------ reports
+  // Month or year in review: what came in, what went out, what you kept, and what changed.
+  const repState = { kind: "month", year: null };
+
+  // income and spending side by side for each month of a year
+  function pairBars(months) {
+    const W = 640, H = 220, L = 52, R = 14, T = 14, B = 26;
+    const sc = scale(0, Math.max(1, ...months.map((m) => Math.max(m.income, m.spent))));
+    const y = (v) => T + (1 - v / sc.max) * (H - T - B);
+    const gw = (W - L - R) / months.length, bw = Math.min(16, gw * 0.3), gap = 2;
+    let g = "";
+    for (const t of sc.ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${compact(t)}</text>`;
+    const bar = (x0, v, color) => {
+      if (!(v > 0)) return "";
+      const top = y(v), base = y(0), r = Math.min(3, (base - top) / 2);
+      return `<path d="M${x0} ${base}V${top + r}Q${x0} ${top} ${x0 + r} ${top}H${x0 + bw - r}Q${x0 + bw} ${top} ${x0 + bw} ${top + r}V${base}Z" fill="${color}"/>`;
+    };
+    let bars = "";
+    months.forEach((m, i) => {
+      const cx = L + i * gw + gw / 2;
+      bars += bar(cx - bw - gap / 2, m.income, "var(--s3)") + bar(cx + gap / 2, m.spent, "var(--s1)");
+      const net = m.income - m.spent;
+      const tip = m.future ? `<b>${esc(monthLabel(m.month))}</b><br><span class="muted">Not here yet</span>`
+        : `<b>${esc(monthLabel(m.month))}</b><br>In ${money(m.income)}<br>Spent ${money(m.spent)}${m.income || m.spent ? `<br>${net >= 0 ? "Kept" : "Short"} ${money(Math.abs(net))}` : ""}`;
+      bars += `<rect class="hit" x="${L + i * gw}" y="${T}" width="${gw}" height="${H - T - B}" ${tipAttr(tip)}/>`;
+      bars += `<text class="ax" x="${cx}" y="${H - 6}" text-anchor="middle" ${m.future ? 'opacity=".45"' : ""}>${esc(shortMonth(m.month))}</text>`;
+    });
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Income and spending by month">${g}${bars}</svg></div>`;
+  }
+
+  async function renderReports(view) {
+    const isYear = repState.kind === "year";
+    const year = repState.year || Number(state.month.slice(0, 4));
+    const d = await api("/api/budget/reports", { query: isYear ? { kind: "year", year } : { month: state.month } });
+    await loadCategories();
+    // the month picker steps months; a year report has its own year switcher
+    $("#month-picker").classList.toggle("hidden", isYear);
+    const thisYear = Number(thisMonth().slice(0, 4));
+    const label = isYear ? String(d.year) : monthLabel(d.key);
+    const prevLabel = isYear ? String(d.prev.year) : monthLabel(d.prev.key).split(" ")[0];
+    const soFar = d.is_current;
+    const delta = (n, goodUp) => {
+      if (Math.abs(n) < 0.5) return `<span class="muted">same as</span>`;
+      const good = goodUp ? n > 0 : n < 0;
+      return `<b class="${good ? "pos" : "negc"}">${n > 0 ? "+" : "−"}${money(Math.abs(n))}</b> vs`;
+    };
+    const vs = d.prev.has_data ? `${d.prev.partial ? `${prevLabel} at this point` : prevLabel}` : "";
+    const sub = (cur, before, goodUp) => (d.prev.has_data ? `${delta(cur - before, goodUp)} ${esc(vs)}` : `<span class="muted">No ${isYear ? "earlier year" : "earlier month"} to compare</span>`);
+
+    const empty = !(d.income > 0 || d.spent > 0);
+    // one plain sentence first
+    let say = "";
+    if (!empty) {
+      say = `${soFar ? `So far in ${isYear ? d.year : monthLabel(d.key).split(" ")[0]}` : `In ${esc(label)}`} you brought in <b>${money(d.income)}</b> and spent <b>${money(d.spent)}</b>`;
+      if (d.income > 0) say += d.net >= 0 ? `, keeping <b>${money(d.net)}</b>${d.savings_rate != null ? ` (${d.savings_rate}% of income)` : ""}` : `, <b>${money(-d.net)}</b> more than came in`;
+      say += ".";
+      if (d.prev.has_data && Math.abs(d.spent - d.prev.spent) >= 1) say += ` Spending was ${money(Math.abs(d.spent - d.prev.spent))} ${d.spent > d.prev.spent ? "higher" : "lower"} than ${esc(vs)}.`;
+      if (d.up && d.up[0]) say += ` The biggest jump was <b>${esc(d.up[0].name)}</b>, up ${money(d.up[0].change)}.`;
+    }
+    const cmpLabel = isYear ? `vs ${d.prev.year}${d.prev.partial ? " at this point" : ""}` : `vs your ${d.compare_months}-month average${d.is_current ? " at this point" : ""}`;
+    const mover = (c) => `<li><span class="grow">${catLabel(c.id ? catById(c.id) || c : null)}</span><span class="small muted num">${money(c.before)} → ${money(c.total)}</span><span class="num rep-ch ${c.change > 0 ? "negc" : "pos"}">${c.change > 0 ? "+" : "−"}${money(Math.abs(c.change))}</span></li>`;
+    const merchMax = Math.max(1, ...d.merchants.map((m) => m.total));
+    const subMax = Math.max(1, ...d.subscriptions.items.map((m) => m.total));
+    const yearNav = isYear ? `<div class="month-picker rep-year"><button id="ry-prev" aria-label="Previous year">${icon("left")}</button><span aria-live="polite">${d.year}</span><button id="ry-next" aria-label="Next year" ${d.year >= thisYear ? "disabled" : ""}>${icon("right")}</button></div>` : "";
+
+    view.innerHTML = `
+      <div class="stack">
+        <div class="row" style="gap:10px;flex-wrap:wrap">
+          <div class="seg" role="tablist" aria-label="Report period">${[["month", "Month"], ["year", "Year"]].map(([k, l]) => `<button role="tab" data-kind="${k}" aria-selected="${repState.kind === k}" class="${repState.kind === k ? "on" : ""}">${l}</button>`).join("")}</div>
+          ${yearNav}<div class="spacer"></div>
+          ${soFar ? `<span class="pill">${isYear ? "Year" : "Month"} in progress</span>` : ""}
+        </div>
+        ${empty ? `<div class="card empty">Nothing recorded for ${esc(label)} yet.</div>` : `
+        <p class="sp-sum">${say}</p>
+        <div class="grid kpis">
+          <div class="card kpi"><div class="label">Income</div><div class="value num pos">${money(d.income)}</div><div class="sub">${sub(d.income, d.prev.income, true)}</div></div>
+          <div class="card kpi"><div class="label">Spent</div><div class="value num">${money(d.spent)}</div><div class="sub">${sub(d.spent, d.prev.spent, false)}</div></div>
+          <div class="card kpi"><div class="label">${d.net >= 0 ? "Kept" : "Short"}</div><div class="value num ${d.net < 0 ? "negc" : ""}">${money(Math.abs(d.net))}${d.savings_rate != null && d.net > 0 ? `<span class="muted" style="font-size:14px;font-weight:600"> ${d.savings_rate}% saved</span>` : ""}</div>
+            <div class="sub">${d.prev.has_data && d.prev.savings_rate != null ? `${d.prev.savings_rate}% in ${esc(vs)}` : d.income > 0 ? "Of what came in" : "No income recorded"}</div></div>
+        </div>
+        ${isYear ? `<section class="card" aria-labelledby="rep-mo">
+          <div class="card-h"><div><h2 id="rep-mo">Month by month</h2><div class="small muted">${d.avg_spent ? `About ${money(d.avg_spent)} spent a month` : ""}${d.best_month ? ` · best ${esc(shortMonth(d.best_month.month))} (kept ${money(d.best_month.income - d.best_month.spent)})` : ""}${d.worst_month && d.worst_month.month !== (d.best_month || {}).month ? ` · toughest ${esc(shortMonth(d.worst_month.month))}` : ""}</div></div><div class="spacer"></div>
+            <div class="legend" style="margin:0"><span style="--c:var(--s3)">Income</span><span style="--c:var(--s1)">Spent</span></div></div>
+          ${pairBars(d.months)}
+        </section>` : ""}
+        <div class="grid two top-align">
+          <section class="card" aria-labelledby="rep-ch">
+            <div class="card-h"><div><h2 id="rep-ch">What changed</h2><div class="small muted">${esc(cmpLabel)}</div></div></div>
+            ${d.up.length || d.down.length ? `
+              ${d.up.length ? `<div class="kind-h">Up</div><ul class="rep-list">${d.up.map(mover).join("")}</ul>` : ""}
+              ${d.down.length ? `<div class="kind-h">Down</div><ul class="rep-list">${d.down.map(mover).join("")}</ul>` : ""}`
+              : `<div class="muted small">${(isYear ? d.prev.has_data : d.compare_months) ? "No category moved by more than $10." : `Not enough history yet. This fills in once there's an earlier ${isYear ? "year" : "month"} to compare with.`}</div>`}
+          </section>
+          <section class="card" aria-labelledby="rep-me">
+            <div class="card-h"><h2 id="rep-me">Top merchants</h2></div>
+            ${d.merchants.length ? `<ol class="m-list">${d.merchants.map((m, i) => `<li><span class="m-rank num">${i + 1}</span><span class="grow desc">${esc(m.name)}</span><span class="small muted num">${plural(m.count, "visit")}</span><span class="m-meter" aria-hidden="true"><i style="width:${(m.total / merchMax) * 100}%"></i></span><span class="num m-amt">${money(m.total)}</span></li>`).join("")}</ol>` : `<div class="muted small">No purchases.</div>`}
+          </section>
+        </div>
+        <div class="grid two top-align">
+          <section class="card" aria-labelledby="rep-ca">
+            <div class="card-h"><h2 id="rep-ca">By category</h2><div class="spacer"></div><span class="small muted">${d.prev.has_data || d.compare_months ? esc(cmpLabel.replace(/^vs /, "Change vs ")) : ""}</span></div>
+            <div class="rep-cats">${d.categories.filter((c) => c.total > 0).map((c) => `<div class="rep-cat"><span class="grow">${catLabel(c.id ? catById(c.id) || c : null)}</span><span class="num">${money(c.total)}</span><span class="num small rep-ch ${Math.abs(c.change) < 1 ? "muted" : c.change > 0 ? "negc" : "pos"}">${(isYear ? d.prev.has_data : d.compare_months) ? (Math.abs(c.change) < 1 ? "—" : `${c.change > 0 ? "+" : "−"}${money(Math.abs(c.change))}`) : ""}</span></div>`).join("")}</div>
+          </section>
+          <div class="stack">
+            <section class="card" aria-labelledby="rep-su">
+              <div class="card-h"><h2 id="rep-su">Subscriptions</h2><div class="spacer"></div><span class="num"><b>${money(d.subscriptions.total)}</b></span></div>
+              ${d.subscriptions.items.length ? `<ol class="m-list">${d.subscriptions.items.map((s) => `<li><span class="grow desc">${esc(s.name)}${s.status !== "active" ? ' <span class="pill">cancelled</span>' : ""}</span><span class="small muted num">${plural(s.count, "charge")}</span><span class="m-meter" aria-hidden="true"><i style="width:${(s.total / subMax) * 100}%;background:var(--s7)"></i></span><span class="num m-amt">${money(s.total)}</span></li>`).join("")}</ol>
+                ${isYear ? "" : `<p class="small muted" style="margin:10px 0 0">About ${money(d.subscriptions.total * 12)} a year at this rate. <a href="#/recurring">Review subscriptions</a></p>`}`
+                : `<div class="muted small">No subscription charges ${isYear ? "this year" : "this month"}.</div>`}
+            </section>
+            <section class="card" aria-labelledby="rep-la">
+              <div class="card-h"><h2 id="rep-la">Largest purchases</h2></div>
+              ${d.largest.length ? d.largest.map((t) => `<div class="m-row"><span>${esc(t.name)} <span class="muted small">${esc(prettyDate(t.date))}</span></span><span class="num">${money(t.amount)}</span></div>`).join("") : `<div class="muted small">None.</div>`}
+            </section>
+          </div>
+        </div>`}
+      </div>`;
+    $$("[data-kind]", view).forEach((b) => (b.onclick = () => { repState.kind = b.dataset.kind; repState.year = null; route(); }));
+    const yp = $("#ry-prev"), yn = $("#ry-next");
+    if (yp) yp.onclick = () => { repState.year = d.year - 1; route(); };
+    if (yn) yn.onclick = () => { if (d.year < thisYear) { repState.year = d.year + 1; route(); } };
   }
 
   // ------------------------------------------------------------------ recurring
@@ -2571,14 +2696,22 @@
             <div class="card-h"><h2 id="set-no">Notifications</h2><div class="spacer"></div><span class="pill ${smtp ? "ok" : "err"}">${smtp ? "Email ready" : "Email not set up"}</span></div>
             ${smtp ? "" : `<p class="small muted" style="margin-top:0">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
             <form id="prefs">
+              <div class="set-h">Spending</div>
               ${sw("alerts_enabled", me.alerts_enabled, "Budget alerts", "When a category nears or passes its budget")}
               <div class="form-grid set-sub">
                 <label class="field"><span>Warn at (% of budget)</span><input name="alert_threshold" type="number" min="1" max="200" value="${me.alert_threshold || 90}"></label>
                 <label class="field"><span>Large transaction alert ($)</span><input name="large_txn_threshold" type="number" min="0" step="1" value="${me.large_txn_threshold || 0}"></label>
               </div>
-              ${sw("bill_reminders", me.bill_reminders, "Bill reminders", "3 days before a bill or subscription is due")}
+              ${sw("alert_duplicates", me.alert_duplicates, "Possible double charges", "The same merchant and amount twice within two days")}
               ${sw("cash_alerts", me.cash_alerts, "Low balance", `When checking is projected to drop below <a href="#/cashflow">your warning level</a>${me.cash_floor ? ` (${money(me.cash_floor)})` : ""}`)}
+              ${sw("alert_paycheck", me.alert_paycheck, "Paycheck arrived", "When a regular deposit lands, with what's left to spend")}
+              <div class="set-h">Bills and subscriptions</div>
+              ${sw("bill_reminders", me.bill_reminders, "Bill reminders", "3 days before a bill or subscription is due")}
+              ${sw("alert_renewals", me.alert_renewals, "Yearly renewals", "A week before a yearly or quarterly charge")}
+              ${sw("alert_price", me.alert_price, "Price increases", "When a subscription charges more than last time")}
+              <div class="set-h">Summaries</div>
               ${sw("weekly_digest", me.weekly_digest, "Weekly summary", "A short recap of your week by email")}
+              ${sw("monthly_report", me.monthly_report, "Monthly report", `Last month in review on the 1st, like the <a href="#/reports">Reports</a> page`)}
               ${sw("update_notes", me.update_notes, "What's new", "A small popup after Keel updates")}
               <div class="row" style="margin-top:16px"><button class="btn primary">Save notifications</button><button type="button" class="btn" id="digest-now" ${smtp ? "" : 'disabled title="Needs email set up"'}>Send a summary now</button></div>
             </form>
@@ -2629,6 +2762,7 @@
       try {
         const saved = await pb.collection("users").update(me.id, {
           alerts_enabled: fd.has("alerts_enabled"), weekly_digest: fd.has("weekly_digest"), update_notes: fd.has("update_notes"), bill_reminders: fd.has("bill_reminders"), cash_alerts: fd.has("cash_alerts"),
+          alert_duplicates: fd.has("alert_duplicates"), alert_price: fd.has("alert_price"), alert_renewals: fd.has("alert_renewals"), alert_paycheck: fd.has("alert_paycheck"), monthly_report: fd.has("monthly_report"),
           alert_threshold: Number(fd.get("alert_threshold")) || 90, large_txn_threshold: Number(fd.get("large_txn_threshold")) || 0,
         });
         pb.authStore.save(pb.authStore.token, saved);

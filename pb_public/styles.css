@@ -1024,3 +1024,17 @@ a.card:hover .link-t { color: var(--primary-strong); }
 }
 
 [hidden] { display: none !important; }
+
+/* ---------- reports ---------- */
+.rep-year { margin: 0; }
+.rep-year button:disabled { opacity: .35; cursor: default; }
+.rep-list { list-style: none; margin: 0 0 6px; padding: 0; }
+.rep-list li { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.rep-list li:last-child { border-bottom: 0; }
+.rep-ch { width: 92px; text-align: right; flex: none; font-weight: 600; }
+.rep-cat { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.rep-cat:last-child { border-bottom: 0; }
+.rep-cat .num:not(.rep-ch) { font-weight: 600; }
+.set-h { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--subtle); padding: 18px 0 2px; }
+.set-h:first-child { padding-top: 0; }
+@media (max-width: 760px) { .rep-list .small.muted { display: none; } .rep-ch { width: auto; } }

@@ -164,4 +164,4 @@ function digest(app, user) {
   return send(app, user.getString("email"), `Weekly budget: ${util.money(weekSpend)} spent this week`, html);
 }
 
-module.exports = { send, layout, claimKey, checkBudgets, largeTransactions, syncFailed, digest, billReminders, smtpReady };
+module.exports = { send, layout, claimKey, row, table, checkBudgets, largeTransactions, syncFailed, digest, billReminders, smtpReady };

@@ -47,6 +47,7 @@ onRecordCreate((e) => {
     e.record.set("weekly_digest", true);
     e.record.set("update_notes", true);
     e.record.set("bill_reminders", true);
+    for (const f of ["alert_duplicates", "alert_price", "alert_renewals", "alert_paycheck", "monthly_report"]) e.record.set(f, true);
   }
   // new accounts start on the current release, so they don't get an update popup right away
   if (!e.record.getString("last_seen_version")) {
@@ -277,6 +278,13 @@ routerAdd("GET", "/api/budget/goals", (e) => {
 routerAdd("GET", "/api/budget/goals/{id}", (e) => {
   const goals = require(`${__hooks}/lib/goals.js`);
   return e.json(200, goals.detail(e.app, e.auth.id, e.request.pathValue("id")));
+}, $apis.requireAuth("users"));
+
+routerAdd("GET", "/api/budget/reports", (e) => {
+  const reports = require(`${__hooks}/lib/reports.js`);
+  const q = e.request.url.query();
+  if (q.get("kind") === "year") return e.json(200, reports.year(e.app, e.auth.id, parseInt(q.get("year"), 10)));
+  return e.json(200, reports.month(e.app, e.auth.id, q.get("month")));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/networth", (e) => {

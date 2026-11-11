@@ -49,6 +49,9 @@ function afterNewTransactions(app, user, created) {
     try { require(`${__hooks}/lib/recurring.js`).detect(app, user.id); } catch (err) { app.logger().error("recurring detect", "error", util.errMsg(err)); }
   }
   try { notify.largeTransactions(app, user, created); } catch (err) { app.logger().error("large txn email", "error", util.errMsg(err)); }
+  const alerts = require(`${__hooks}/lib/alerts.js`);
+  try { alerts.duplicates(app, user, created); } catch (err) { app.logger().error("duplicate charge email", "error", util.errMsg(err)); }
+  try { alerts.paychecks(app, user, created); } catch (err) { app.logger().error("paycheck email", "error", util.errMsg(err)); }
   try { notify.checkBudgets(app, user); } catch (err) { app.logger().error("budget alert email", "error", util.errMsg(err)); }
 }
 
@@ -81,7 +84,7 @@ function digestAll(app) {
   eachUser(app, (u) => { if (u.getBool("weekly_digest") && u.getString("email")) notify.digest(app, u); });
 }
 
-// Daily: net worth snapshot and "bill due soon" emails.
+// Daily: net worth snapshot, "bill due soon", price increase and renewal emails, and on the 1st the monthly report.
 function dailyAll(app) {
   const notify = require(`${__hooks}/lib/notify.js`);
   const networth = require(`${__hooks}/lib/networth.js`);
@@ -89,6 +92,10 @@ function dailyAll(app) {
     networth.snapshot(app, u.id);
     notify.billReminders(app, u);
     try { require(`${__hooks}/lib/forecast.js`).lowBalanceAlert(app, u); } catch (err) { app.logger().error("cash forecast alert", "error", util.errMsg(err)); }
+    const alerts = require(`${__hooks}/lib/alerts.js`);
+    try { alerts.priceIncreases(app, u); } catch (err) { app.logger().error("price increase email", "error", util.errMsg(err)); }
+    try { alerts.renewals(app, u); } catch (err) { app.logger().error("renewal email", "error", util.errMsg(err)); }
+    try { require(`${__hooks}/lib/reports.js`).monthlyEmail(app, u); } catch (err) { app.logger().error("monthly report email", "error", util.errMsg(err)); }
   });
 }
 

@@ -9,6 +9,7 @@
 - **Split and exclude**: split one purchase across categories (part groceries, part household), or leave transfers, reimbursements and one-offs out of your budget and spending. Balances always use the real amounts. Filter the Transactions page by split or excluded transactions.
 - **Spending** breakdown by category and merchant, with a 6-month trend.
 - **Cash-flow forecast**: your checking balance projected day by day for the next 30 to 90 days, with bills and paychecks on their expected dates plus your usual everyday spending. It shows the lowest point and your balance before the next payday. Set a warning level and get an email when your balance is projected to drop below it in the next two weeks.
+- **Reports**: a month or year in review. Income against spending, what you kept and your savings rate, the categories that changed most, top merchants, largest purchases and what your subscriptions cost. A year view charts income and spending month by month. The month's report is also emailed on the 1st.
 - **Net worth** over time: assets minus credit cards and loans, recorded daily (earlier history is estimated from transactions).
 - **Overview**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
 - **Insights**: month-end projections, a 50/30/20 check and plain-language tips.
@@ -17,7 +18,7 @@
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
 - **Installable app** for phones and desktops: home-screen icon, full-screen window, opens offline.
 - **Calm, accessible design**: Keel Blue on cool neutrals, the Inter typeface, Lucide icons, a dark mode of its own, a phone layout with a bottom bar, and reduced-motion support.
-- **Email over SMTP**: alerts when a budget passes your warning threshold or goes over it, alerts for large transactions, a failed-sync notice, a weekly summary, plus password reset and verification emails.
+- **Email over SMTP**: alerts when a budget passes your warning threshold or goes over it, large transactions, possible double charges, a subscription price going up, a yearly renewal a week out, and your paycheck arriving. Also a failed-sync notice, a weekly summary, a monthly report, and password reset and verification emails. Each one can be turned off in Settings.
 
 ## Install
 
