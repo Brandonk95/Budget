@@ -1,5 +1,5 @@
 {
-  "version": "2.13.0",
+  "version": "2.13.1",
   "released": "2026-11-11",
-  "motd": "New Reports page: a month or year in review with what came in, what went out, what you kept and what changed most. Plus new email alerts for possible double charges, subscription price increases, yearly renewals a week out and your paycheck arriving, all switchable in Settings."
+  "motd": "Fixes: tapping Everything else on the Budget page now sets its own amount instead of changing your total, and money a category rolls over no longer comes out of Everything else. New goals say \"Just started\" instead of \"Behind\", deleting a transaction from the Overview refreshes it, and archived categories can be restored under Manage categories."
 }

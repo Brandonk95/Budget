@@ -1038,3 +1038,8 @@ a.card:hover .link-t { color: var(--primary-strong); }
 .set-h { font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--subtle); padding: 18px 0 2px; }
 .set-h:first-child { padding-top: 0; }
 @media (max-width: 760px) { .rep-list .small.muted { display: none; } .rep-ch { width: auto; } }
+
+.faded-row td:first-child { opacity: .6; }
+/* Manage categories: long names wrap instead of pushing the table wider than a phone */
+.manage .cl > span:last-child { white-space: normal; }
+@media (max-width: 640px) { .manage td { padding-left: 6px; padding-right: 6px; } }

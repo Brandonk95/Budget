@@ -116,9 +116,12 @@ function compute(app, userId, monthKey) {
     incomeOverride = u.getFloat("income_override");
     budgetSetting = u.getFloat("budget_total");
   } catch (_) {}
-  const totalBudget = Math.max(budgetSetting, catBudget);
+  // "Everything else" is the total minus the category budgets as set (not counting rollover), so
+  // money a category carries over adds to the month instead of being taken from Everything else.
+  const catBase = spendCats.filter((c) => c.budget > 0).reduce((s, c) => s + c.budget, 0);
+  const elseBudget = Math.max(0, budgetSetting - catBase);
+  const totalBudget = catBudget + elseBudget;
   const elseSpent = spendCats.filter((c) => !(c.budget > 0)).reduce((s, c) => s + c.spent, 0) + cur.uncatSpend;
-  const elseBudget = Math.max(0, totalBudget - catBudget);
   const everythingElse = {
     budget: util.round2(elseBudget), spent: util.round2(elseSpent), remaining: util.round2(elseBudget - elseSpent),
     pct: elseBudget > 0 ? Math.round((elseSpent / elseBudget) * 100) : null,
@@ -229,7 +232,7 @@ function compute(app, userId, monthKey) {
     safe_per_day: util.round2(safePerDay), uncategorized: { count: cur.uncatCount, amount: util.round2(cur.uncatSpend) },
     split, categories, bills, recurring_total: util.round2(recurringTotal), trend, tips,
     income_override: util.round2(incomeOverride),
-    budget_setting: util.round2(budgetSetting), category_budgeted: util.round2(catBudget),
+    budget_setting: util.round2(budgetSetting), category_budgeted: util.round2(catBudget), category_base: util.round2(catBase),
     everything_else: everythingElse, avg_spend: util.round2(avgSpend), bill_list: billList,
     goals_monthly: util.round2(goalsMonthly(app, userId)),
     daily: {

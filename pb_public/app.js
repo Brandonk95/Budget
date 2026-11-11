@@ -1581,7 +1581,7 @@
         if (del) del.onclick = async () => {
           close();
           if (!(await confirmBox("Delete this transaction? Bank-synced transactions may come back on the next sync."))) return;
-          try { await pb.collection("transactions").delete(tx.id); toast("Deleted"); loadTx(); } catch (err) { fail(err); }
+          try { await pb.collection("transactions").delete(tx.id); toast("Deleted"); if (currentRoute() === "transactions") loadTx(); else route(); } catch (err) { fail(err); }
         };
         const mk = $("#mkrule", m);
         if (mk) mk.onclick = () => { const sel = $("[name=category]", form); close(); createRuleDialog(suggestPattern(tx), sel ? sel.value : tx.category); };
@@ -1819,14 +1819,15 @@
         <details class="card manage"><summary><h2 style="display:inline">Manage categories</h2></summary>
           <div class="row" style="margin:12px 0"><p class="muted small" style="margin:0">Category type drives the 50/30/20 check. Transfers never count as spending.</p><div class="spacer"></div><button class="btn sm primary" id="add-cat">+ Category</button></div>
           <div class="table-wrap"><table><tbody>
-            ${Object.keys(KINDS).map((k) => { const list = state.categories.filter((c) => c.kind === k && !c.archived); return list.length ? `<tr><td colspan="3" class="kind-h">${KINDS[k]}</td></tr>` + list.map((c) => `<tr><td>${catLabel(c)}</td><td class="right num muted">${c.budget ? money(c.budget) + "/mo" : ""}</td><td class="right"><button class="btn sm edit-cat" data-id="${c.id}">Edit</button></td></tr>`).join("") : ""; }).join("")}
+            ${Object.keys(KINDS).map((k) => { const list = state.categories.filter((c) => c.kind === k && !c.archived); return list.length ? `<tr><td colspan="3" class="kind-h">${KINDS[k]}</td></tr>` + list.map((c) => `<tr><td>${catLabel(c)}</td><td class="right num muted">${c.budget ? money0(c.budget) + "/mo" : ""}</td><td class="right"><button class="btn sm edit-cat" data-id="${c.id}">Edit</button></td></tr>`).join("") : ""; }).join("")}
+            ${(() => { const arch = state.categories.filter((c) => c.archived); return arch.length ? `<tr><td colspan="3" class="kind-h">Archived</td></tr>` + arch.map((c) => `<tr class="faded-row"><td>${catLabel(c)}</td><td colspan="2" class="right"><button class="btn sm restore-cat" data-id="${c.id}">Restore</button></td></tr>`).join("") : ""; })()}
           </tbody></table></div>
         </details>
       </div>`;
 
     const statsById = Object.fromEntries(d.categories.map((c) => [c.id, c]));
     $$(".b-row", view).forEach((el) => {
-      el.onclick = () => (el.dataset.id ? editCategoryBudget(statsById[el.dataset.id]) : editTotal(d));
+      el.onclick = () => (el.dataset.id ? editCategoryBudget(statsById[el.dataset.id], d) : editEverythingElse(d));
       el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
     });
     $$("#wizard", view).forEach((b) => (b.onclick = () => budgetWizard(d)));
@@ -1834,6 +1835,9 @@
     const ei = $("#edit-income", view); if (ei) ei.onclick = () => editIncome(d);
     const et = $("#edit-total", view); if (et) et.onclick = () => editTotal(d);
     $$(".edit-cat", view).forEach((b) => (b.onclick = () => editCategory(catById(b.dataset.id))));
+    $$(".restore-cat", view).forEach((b) => (b.onclick = async () => {
+      try { await pb.collection("categories").update(b.dataset.id, { archived: false }); toast("Category restored"); state.categories = []; await loadCategories(); route(); } catch (err) { fail(err); }
+    }));
     $("#add-cat").onclick = () => editCategory(null);
   }
 
@@ -1858,17 +1862,57 @@
       <form id="tot-form" class="stack">
         <p class="muted small" style="margin:0">One number for everything you spend in a month, bills included. Category budgets (${money(d.category_budgeted)} now) come out of it; the rest is “Everything else”.</p>
         <label class="field"><span>Total per month</span><input name="v" type="number" min="0" step="any" value="${Math.round(d.budget_setting || d.budgeted)}"></label>
+        <p class="small" id="tot-hint" style="margin:0" aria-live="polite"></p>
         ${d.avg_spend ? `<p class="small muted" style="margin:0">Recent average: ${money(d.avg_spend)}/month.</p>` : ""}
         <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
       </form>`, {
-      onMount: (m, close) => { $("#tot-form", m).onsubmit = async (e) => { e.preventDefault(); try { await saveMe({ budget_total: Math.max(0, Number(new FormData(e.target).get("v")) || 0) }); close(); route(); } catch (err) { fail(err); } }; },
+      onMount: (m, close) => {
+        const form = $("#tot-form", m), inp = $("[name=v]", form), hint = $("#tot-hint", m);
+        const base = d.category_base || 0;
+        const sync = () => {
+          const v = Math.max(0, Number(inp.value) || 0);
+          if (!base) { hint.textContent = ""; return; }
+          hint.className = "small " + (v < base ? "negc" : "muted");
+          hint.textContent = v < base ? `That's less than your category budgets (${money(base)}). Raise it or lower a category, or Everything else gets nothing.`
+            : `${money(v - base)} a month for Everything else.`;
+        };
+        inp.oninput = sync; sync();
+        form.onsubmit = async (e) => { e.preventDefault(); try { await saveMe({ budget_total: Math.max(0, Number(inp.value) || 0) }); close(); toast("Budget saved"); route(); } catch (err) { fail(err); } };
+      },
     });
   }
 
-  function editCategoryBudget(c) {
+  // "Everything else" is whatever the total leaves after category budgets, so setting it sets the total.
+  function editEverythingElse(d) {
+    const base = d.category_base || 0;
+    const ee = d.everything_else;
+    modal("Everything else", `
+      <form id="ee-form" class="stack">
+        <p class="muted small" style="margin:0">Covers spending in categories without their own budget${ee.spent ? ` (${money(ee.spent)} so far this month)` : ""}.</p>
+        <label class="field"><span>Budget per month</span><input name="v" type="number" min="0" step="any" value="${Math.round(ee.budget)}"></label>
+        ${ee.avg3 ? `<p class="small muted" style="margin:0">You've averaged ${money(ee.avg3)}/month here. <button type="button" class="btn link sm" id="ee-sugg">Use ${money(Math.ceil(ee.avg3 / 5) * 5)}</button></p>` : ""}
+        <p class="small muted" id="ee-hint" style="margin:0" aria-live="polite"></p>
+        <div class="actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div>
+      </form>`, {
+      onMount: (m, close) => {
+        const form = $("#ee-form", m), inp = $("[name=v]", form), hint = $("#ee-hint", m);
+        const sync = () => { const v = Math.max(0, Number(inp.value) || 0); hint.textContent = `Your total budget becomes ${money(base + v)}: ${money(base)} in category budgets plus ${money(v)} for everything else.`; };
+        inp.oninput = sync; sync();
+        const sg = $("#ee-sugg", m); if (sg) sg.onclick = () => { inp.value = Math.ceil(ee.avg3 / 5) * 5; sync(); };
+        form.onsubmit = async (e) => {
+          e.preventDefault();
+          const v = Math.max(0, Number(inp.value) || 0);
+          try { await saveMe({ budget_total: Math.round((base + v) * 100) / 100 }); close(); toast("Budget saved"); route(); } catch (err) { fail(err); }
+        };
+      },
+    });
+  }
+
+  function editCategoryBudget(c, d) {
     modal(c.name, `
       <form id="cb-form" class="stack">
         <label class="field"><span>Monthly budget</span><input name="budget" type="number" min="0" step="any" value="${c.budget || 0}"></label>
+        ${d && d.budget_setting ? `<p class="small muted" id="cb-hint" style="margin:0" aria-live="polite"></p>` : ""}
         ${c.suggested ? `<p class="small muted" style="margin:0">You've averaged ${money(c.avg3)}/month here. <button type="button" class="btn link sm" id="use-sugg">Use ${money(c.suggested)}</button></p>` : ""}
         <label class="check"><input type="checkbox" name="rollover" ${c.rollover ? "checked" : ""}> Roll over: unspent money (or overspending) carries into next month</label>
         <div class="actions">
@@ -1880,7 +1924,20 @@
         const form = $("#cb-form", m);
         const save = async (budget, rollover) => { try { await pb.collection("categories").update(c.id, { budget, rollover }); close(); route(); } catch (err) { fail(err); } };
         form.onsubmit = (e) => { e.preventDefault(); const fd = new FormData(form); save(Math.max(0, Number(fd.get("budget")) || 0), fd.has("rollover")); };
-        const us = $("#use-sugg", m); if (us) us.onclick = () => { $("[name=budget]", form).value = c.suggested; };
+        const hint = $("#cb-hint", m);
+        const sync = () => {
+          if (!hint) return;
+          // the total stays put; this category's slice comes out of (or goes back to) Everything else
+          const v = Math.max(0, Number($("[name=budget]", form).value) || 0);
+          // what this category has now (a new budget starts with a suggested amount but has none yet)
+          const orig = (d.categories.find((x) => x.id === c.id) || {}).budget || 0;
+          const left = d.budget_setting - ((d.category_base || 0) - orig + v);
+          hint.className = "small " + (left < 0 ? "negc" : "muted");
+          hint.textContent = left < 0 ? `That's ${money(-left)} more than your ${money(d.budget_setting)} total allows. Everything else would get nothing; raise the total to keep room for it.`
+            : `Comes out of your ${money(d.budget_setting)} total, leaving ${money(left)} for Everything else.`;
+        };
+        $("[name=budget]", form).oninput = sync; sync();
+        const us = $("#use-sugg", m); if (us) us.onclick = () => { $("[name=budget]", form).value = c.suggested; sync(); };
         const rm = $("#cb-remove", m); if (rm) rm.onclick = () => save(0, false);
       },
     });
@@ -1891,7 +1948,7 @@
     if (!options.length) return toast("Every category already has a budget.");
     modal("Add a category budget", `<div class="pick">${options.map((c) => `<button class="pick-i" data-id="${c.id}">${catLabel(c)}<span class="spacer"></span><span class="small muted">${c.avg3 ? "avg " + money(c.avg3) : ""}</span></button>`).join("")}</div>
       <div class="actions"><button class="btn" data-close>Cancel</button></div>`, {
-      onMount: (m, close) => { $$(".pick-i", m).forEach((b) => (b.onclick = () => { close(); const c = options.find((x) => x.id === b.dataset.id); editCategoryBudget({ ...c, budget: c.suggested || 0 }); })); },
+      onMount: (m, close) => { $$(".pick-i", m).forEach((b) => (b.onclick = () => { close(); const c = options.find((x) => x.id === b.dataset.id); editCategoryBudget({ ...c, budget: c.suggested || 0 }, d); })); },
     });
   }
 
@@ -1989,7 +2046,7 @@
         };
         const a = $("#arch", m);
         if (a) a.onclick = async () => {
-          try { await pb.collection("categories").update(cat.id, { archived: true }); close(); toast("Archived — existing transactions keep the category."); route(); } catch (err) { fail(err); }
+          try { await pb.collection("categories").update(cat.id, { archived: true }); close(); toast("Archived. Its transactions keep the category; restore it any time under Manage categories."); route(); } catch (err) { fail(err); }
         };
       },
     });
@@ -2444,7 +2501,7 @@
 
   // ------------------------------------------------------------------ goals
   // Goal numbers come from /api/budget/goals: a linked goal follows its account's balance.
-  const GOAL_STATUS = { done: ["ok", "Reached"], on_track: ["ok", "On track"], behind: ["warn-p", "Behind"], overdue: ["err", "Past due"], no_date: ["", "No deadline"] };
+  const GOAL_STATUS = { done: ["ok", "Reached"], on_track: ["ok", "On track"], behind: ["warn-p", "Behind"], started: ["", "Just started"], overdue: ["err", "Past due"], no_date: ["", "No deadline"] };
   const GOAL_ACCOUNT_TYPES = { checking: 1, savings: 1, investment: 1, cash: 1, other: 1 };
   const fullDate = (d) => `${prettyDate(d)} ${dateOnly(d).slice(0, 4)}`;
   // 12 days, 5 months, 3.5 years

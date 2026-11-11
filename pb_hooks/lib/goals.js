@@ -101,6 +101,8 @@ function compute(app, userId, g, detail) {
   else if (!td) status = "no_date";
   else if (daysLeft <= 0) status = "overdue";
   else if (projected && projected <= td) status = "on_track";
+  // no pace yet (a goal tracked by hand needs two weeks): too soon to call it behind
+  else if (pace == null) status = "started";
   else status = "behind";
 
   const out = {
