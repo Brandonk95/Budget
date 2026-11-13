@@ -424,6 +424,7 @@
   const skCard = (body) => `<div class="sk">${body}</div>`;
   const SKELETON = `<div class="sk-page" aria-busy="true" aria-label="Loading"><div class="sk-row">${skCard('<i class="s"></i><i class="h"></i><i></i>').repeat(3)}</div>${skCard('<i class="s"></i><i class="t"></i>')}${skCard('<i></i><i></i><i class="s"></i>')}</div>`;
 
+  let routeSeq = 0;
   async function route() {
     // a re-render removes whatever was hovered, so drop any open tooltip with it
     const tip = $("#viz-tip"); if (tip) tip.style.opacity = 0;
@@ -442,10 +443,43 @@
     $("#mlabel").textContent = monthLabel(state.month);
     const view = $("#view");
     const moved = view.dataset.r !== r;
-    view.dataset.r = r;
+    const fresh = moved || view.dataset.m !== state.month;
+    view.dataset.r = r; view.dataset.m = state.month;
     if (moved) { view.classList.remove("enter"); view.innerHTML = SKELETON; window.scrollTo(0, 0); }
-    try { await def.render(view); } catch (err) { fail(err); view.innerHTML = `<div class="card empty"><b>Couldn't load this page.</b><p class="small">${esc(errText(err))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`; }
+    const seq = (routeSeq += 1);
+    try { await def.render(view); } catch (err) {
+      // a page still loading when you moved on can trip over the newer page; that's not your problem
+      if (seq !== routeSeq || !view.isConnected) return;
+      fail(err); view.innerHTML = `<div class="card empty"><b>Couldn't load this page.</b><p class="small">${esc(errText(err))}</p><button class="btn" onclick="location.reload()">Try again</button></div>`; }
+    if (seq !== routeSeq) return;
     if (moved) { void view.offsetWidth; view.classList.add("enter"); }
+    if (fresh) countUp(view);
+  }
+
+  // Headline amounts tick up from zero. Only the leading "$1,234.56" text is animated; the final
+  // text is exactly what was rendered, so nothing changes once it lands.
+  const COUNT_SEL = ".ov-big, .kpi-v, .big.num, .g-big, .d-big";
+  function countUp(root) {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    $$(COUNT_SEL, root).forEach((el) => {
+      const node = [...el.childNodes].find((n) => n.nodeType === 3 && /\$[\d,]+/.test(n.nodeValue));
+      if (!node) return;
+      const orig = node.nodeValue;
+      const m = /^(\s*[−-]?\$)([\d,]+)(\.\d+)?([\s\S]*)$/.exec(orig);
+      if (!m) return;
+      const target = Number(m[2].replace(/,/g, "") + (m[3] || ""));
+      if (!(target > 0)) return;
+      const dec = m[3] ? m[3].length - 1 : 0;
+      const nf = new Intl.NumberFormat(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+      const t0 = performance.now(), dur = 650 + Math.min(350, Math.log10(target + 1) * 60);
+      const step = (now) => {
+        if (!node.isConnected) return;
+        const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        node.nodeValue = p >= 1 ? orig : m[1] + nf.format(target * e) + m[4];
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
   }
 
   // ------------------------------------------------------------------ charts
@@ -541,9 +575,9 @@
       const pts = s.values.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
       if (!pts.length) return;
       const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
-      if (s.area) paths += `<path d="${d}L${pts[pts.length - 1][0].toFixed(1)} ${y(Math.max(sc.min, 0))}L${pts[0][0].toFixed(1)} ${y(Math.max(sc.min, 0))}Z" fill="${s.color}" opacity=".12"/>`;
-      paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" ${s.dashed ? 'stroke-dasharray="5 5"' : ""}/>`;
-      if (s.endDot) { const p = pts[pts.length - 1]; paths += `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`; }
+      if (s.area) paths += `<path class="ar" d="${d}L${pts[pts.length - 1][0].toFixed(1)} ${y(Math.max(sc.min, 0))}L${pts[0][0].toFixed(1)} ${y(Math.max(sc.min, 0))}Z" fill="${s.color}" opacity=".12"/>`;
+      paths += `<path ${s.dashed ? 'class="ln-d" stroke-dasharray="5 5"' : 'class="ln" pathLength="1"'} d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      if (s.endDot) { const p = pts[pts.length - 1]; paths += `<circle class="end-dot" cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`; }
       paths += `<circle class="xh-dot" data-s="${si}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2" cx="-10" cy="-10"/>`;
     });
     for (const mk of marks) {
@@ -567,7 +601,7 @@
     items.forEach((it, i) => {
       const len = total ? (it.value / total) * C : 0;
       const dash = Math.max(0.5, len - GAP);
-      segs += `<circle class="d-seg ${it.id != null ? "click" : ""}" data-i="${i}" r="${R}" cx="100" cy="100" fill="none" stroke="${it.color}" stroke-width="${SW}" stroke-dasharray="${dash} ${C - dash}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)" ${tipAttr(`<b>${esc(it.label)}</b><br>${money(it.value)} · ${total ? Math.round((it.value / total) * 100) : 0}%`)}/>`;
+      segs += `<circle class="d-seg ${it.id != null ? "click" : ""}" style="--i:${i}" data-i="${i}" r="${R}" cx="100" cy="100" fill="none" stroke="${it.color}" stroke-width="${SW}" stroke-dasharray="${dash} ${C - dash}" stroke-dashoffset="${-off}" transform="rotate(-90 100 100)" ${tipAttr(`<b>${esc(it.label)}</b><br>${money(it.value)} · ${total ? Math.round((it.value / total) * 100) : 0}%`)}/>`;
       off += len;
     });
     if (!items.length) segs = `<circle r="${R}" cx="100" cy="100" fill="none" stroke="var(--track)" stroke-width="${SW}"/>`;
@@ -586,7 +620,7 @@
     let bars = "";
     trend.forEach((t, i) => {
       const x0 = L + i * gw + (gw - bw) / 2, top = y(t.total), base = y(0), r = Math.min(4, (base - top) / 2);
-      if (t.total > 0) bars += `<path d="M${x0} ${base}V${top + r}Q${x0} ${top} ${x0 + r} ${top}H${x0 + bw - r}Q${x0 + bw} ${top} ${x0 + bw} ${top + r}V${base}Z" fill="var(--s1)" opacity="${t.month === currentKey ? 1 : 0.55}"/>`;
+      if (t.total > 0) bars += `<path class="vbar" style="--i:${i}" d="M${x0} ${base}V${top + r}Q${x0} ${top} ${x0 + r} ${top}H${x0 + bw - r}Q${x0 + bw} ${top} ${x0 + bw} ${top + r}V${base}Z" fill="var(--s1)" opacity="${t.month === currentKey ? 1 : 0.55}"/>`;
       bars += `<rect class="hit" x="${L + i * gw}" y="${T}" width="${gw}" height="${H - T - B}" ${tipAttr(`<b>${esc(monthLabel(t.month))}</b><br>Spent ${money(t.total)}`)}/>`;
       if (t.month === currentKey && t.total > 0) bars += `<text class="lbl" x="${x0 + bw / 2}" y="${top - 6}" text-anchor="middle">${esc(compact(t.total))}</text>`;
       bars += `<text class="ax" x="${x0 + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(shortMonth(t.month))}</text>`;
@@ -950,15 +984,15 @@
     const gw = (W - L - R) / months.length, bw = Math.min(16, gw * 0.3), gap = 2;
     let g = "";
     for (const t of sc.ticks) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${compact(t)}</text>`;
-    const bar = (x0, v, color) => {
+    const bar = (x0, v, color, i) => {
       if (!(v > 0)) return "";
       const top = y(v), base = y(0), r = Math.min(3, (base - top) / 2);
-      return `<path d="M${x0} ${base}V${top + r}Q${x0} ${top} ${x0 + r} ${top}H${x0 + bw - r}Q${x0 + bw} ${top} ${x0 + bw} ${top + r}V${base}Z" fill="${color}"/>`;
+      return `<path class="vbar" style="--i:${i}" d="M${x0} ${base}V${top + r}Q${x0} ${top} ${x0 + r} ${top}H${x0 + bw - r}Q${x0 + bw} ${top} ${x0 + bw} ${top + r}V${base}Z" fill="${color}"/>`;
     };
     let bars = "";
     months.forEach((m, i) => {
       const cx = L + i * gw + gw / 2;
-      bars += bar(cx - bw - gap / 2, m.income, "var(--s3)") + bar(cx + gap / 2, m.spent, "var(--s1)");
+      bars += bar(cx - bw - gap / 2, m.income, "var(--s3)", i) + bar(cx + gap / 2, m.spent, "var(--s1)", i);
       const net = m.income - m.spent;
       const tip = m.future ? `<b>${esc(monthLabel(m.month))}</b><br><span class="muted">Not here yet</span>`
         : `<b>${esc(monthLabel(m.month))}</b><br>In ${money(m.income)}<br>Spent ${money(m.spent)}${m.income || m.spent ? `<br>${net >= 0 ? "Kept" : "Short"} ${money(Math.abs(net))}` : ""}`;

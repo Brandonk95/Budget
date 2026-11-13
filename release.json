@@ -1,5 +1,5 @@
 {
-  "version": "2.13.1",
-  "released": "2026-11-11",
-  "motd": "Fixes: tapping Everything else on the Budget page now sets its own amount instead of changing your total, and money a category rolls over no longer comes out of Everything else. New goals say \"Just started\" instead of \"Behind\", deleting a transaction from the Overview refreshes it, and archived categories can be restored under Manage categories."
+  "version": "2.14.0",
+  "released": "2026-11-13",
+  "motd": "Keel has a bit more life: pages cascade in, headline numbers count up, progress bars fill, the budget ring and spending donut sweep around, and chart bars and lines draw themselves. If your device is set to reduce motion, all of it stays off."
 }
