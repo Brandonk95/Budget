@@ -1085,3 +1085,7 @@ a.card:hover, .card.click:hover, .goal[data-id]:hover { transform: translateY(-2
 @keyframes toast-in { from { opacity: 0; transform: translateY(16px) scale(.94); } }
 .toast::before { animation: pop 380ms 120ms var(--spring) both; }
 .modal { animation-timing-function: var(--spring); }
+/* Account rows: a long name wraps instead of pushing the balance off the card on a phone */
+.acc-list { grid-template-columns: minmax(0, 1fr); }
+.acc-row .t-name { white-space: normal; overflow-wrap: anywhere; }
+.acc-row > .right { flex: none; }

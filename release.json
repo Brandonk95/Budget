@@ -1,5 +1,5 @@
 {
-  "version": "2.14.0",
-  "released": "2026-11-13",
-  "motd": "Keel has a bit more life: pages cascade in, headline numbers count up, progress bars fill, the budget ring and spending donut sweep around, and chart bars and lines draw themselves. If your device is set to reduce motion, all of it stays off."
+  "version": "2.14.1",
+  "released": "2026-11-16",
+  "motd": "Fix: on a phone, an account with a long name no longer pushes its balance off the edge of the Accounts page. Long names now wrap onto a second line."
 }
