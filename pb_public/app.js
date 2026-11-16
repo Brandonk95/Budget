@@ -3037,15 +3037,35 @@
     const theme = getTheme();
     const smtp = state.status.smtp;
     // a setting with its explanation on the left and a switch on the right
-    const sw = (name, on, title, desc) => `<label class="set-row"><span class="grow"><b>${title}</b>${desc ? `<span class="small muted">${desc}</span>` : ""}</span><input type="checkbox" class="sw" name="${name}" ${on ? "checked" : ""}></label>`;
-    const link = (href, ic, title, desc) => `<a class="set-link" href="${href}">${icon(ic)}<span class="grow"><b>${title}</b><span class="small muted">${desc}</span></span><span class="muted" aria-hidden="true">›</span></a>`;
+    const sw = (name, on, title, desc, ic, c) => `<label class="set-row">${ic ? hIc(ic, c) : ""}<span class="grow"><b>${title}</b>${desc ? `<span class="small muted">${desc}</span>` : ""}</span><input type="checkbox" class="sw" name="${name}" ${on ? "checked" : ""}></label>`;
+    const link = (href, ic, title, desc, c) => `<a class="set-link" href="${href}">${hIc(ic, c)}<span class="grow"><b>${title}</b><span class="small muted">${desc}</span></span><span class="muted" aria-hidden="true">›</span></a>`;
+    const ALERTS = ["alerts_enabled", "alert_duplicates", "cash_alerts", "alert_paycheck", "bill_reminders", "alert_renewals", "alert_price", "weekly_digest", "monthly_report", "update_notes"];
+    const alertsOn = (src) => ALERTS.filter((k) => src(k)).length;
+    const THEMES = [["system", "System"], ["light", "Light"], ["dark", "Dark"]];
+    const others = hh ? [hh.owner, ...hh.members].filter((p) => p && p.id !== me.id) : [];
+    const sharedWith = others.length ? `Shared with ${esc(others.map((p) => p.name || p.email).join(", "))}` : "Just you";
+    const chip = (ic, html, id) => `<span class="set-chip"${id ? ` id="${id}"` : ""}>${icon(ic)}<span>${html}</span></span>`;
     view.innerHTML = `
+      <section class="card ov-hero set-hero" aria-label="Your account">
+        <div class="set-me">
+          ${meAv(me).replace('class="av"', 'class="av set-av"')}
+          <div class="set-me-t"><h2>${esc(me.name || me.email.split("@")[0])}</h2>
+            <div class="set-me-e">${esc(me.email)}<span class="set-ver ${me.verified ? "" : "no"}">${me.verified ? "Verified" : "Not verified"}</span></div></div>
+        </div>
+        <div class="set-chips">
+          ${chip("bell", `<b>${alertsOn((k) => me[k])}</b> of ${ALERTS.length} alerts on`, "set-alerts-n")}
+          ${chip(others.length ? "users" : "user", sharedWith)}
+          ${chip("palette", `Theme: ${THEMES.find(([k]) => k === theme)[1]}`, "set-theme-n")}
+          ${chip("sparkle", `Keel v${esc(state.status.version || "")}`)}
+        </div>
+        <svg class="ov-waves" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true"><path d="M0 60c120 30 240 30 360 0s240-30 360 0 240 30 360 0 240-30 360 0v60H0z"/><path d="M0 80c120-24 240-24 360 0s240 24 360 0 240-24 360 0 240 24 360 0v40H0z"/></svg>
+      </section>
       <div class="grid two top-align">
         <div class="stack">
           <section class="card" aria-labelledby="set-ap">
             <div class="card-h"><h2 id="set-ap" class="ic-h">${hIc("palette", "s7")}Appearance</h2></div>
-            <div class="set-row"><span class="grow"><b>Theme</b><span class="small muted">System follows your device's light or dark setting.</span></span>
-              <div class="seg" role="radiogroup" aria-label="Theme">${[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button type="button" role="radio" aria-checked="${theme === k}" data-theme-pick="${k}" class="${theme === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+            <p class="small muted" style="margin-top:0">System follows your device's light or dark setting.</p>
+            <div class="tp-grid" role="radiogroup" aria-label="Theme">${THEMES.map(([k, l]) => `<button type="button" role="radio" aria-checked="${theme === k}" data-theme-pick="${k}" class="tp ${theme === k ? "on" : ""}"><span class="tp-prev tp-${k}" aria-hidden="true"><i></i><i></i><i></i></span><span class="tp-l">${l}</span></button>`).join("")}</div>
           </section>
 
           <section class="card" aria-labelledby="set-no">
@@ -3053,22 +3073,22 @@
             ${smtp ? "" : `<p class="small muted" style="margin-top:0">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
             <form id="prefs">
               <div class="set-h">Spending</div>
-              ${sw("alerts_enabled", me.alerts_enabled, "Budget alerts", "When a category nears or passes its budget")}
+              ${sw("alerts_enabled", me.alerts_enabled, "Budget alerts", "When a category nears or passes its budget", "budget", "s2")}
               <div class="form-grid set-sub">
                 <label class="field"><span>Warn at (% of budget)</span><input name="alert_threshold" type="number" min="1" max="200" value="${me.alert_threshold || 90}"></label>
                 <label class="field"><span>Large transaction alert ($)</span><input name="large_txn_threshold" type="number" min="0" step="1" value="${me.large_txn_threshold || 0}"></label>
               </div>
-              ${sw("alert_duplicates", me.alert_duplicates, "Possible double charges", "The same merchant and amount twice within two days")}
-              ${sw("cash_alerts", me.cash_alerts, "Low balance", `When checking is projected to drop below <a href="#/cashflow">your warning level</a>${floor ? ` (${money(floor)})` : ""}`)}
-              ${sw("alert_paycheck", me.alert_paycheck, "Paycheck arrived", "When a regular deposit lands, with what's left to spend")}
+              ${sw("alert_duplicates", me.alert_duplicates, "Possible double charges", "The same merchant and amount twice within two days", "card", "s8")}
+              ${sw("cash_alerts", me.cash_alerts, "Low balance", `When checking is projected to drop below <a href="#/cashflow">your warning level</a>${floor ? ` (${money(floor)})` : ""}`, "cashflow", "s1")}
+              ${sw("alert_paycheck", me.alert_paycheck, "Paycheck arrived", "When a regular deposit lands, with what's left to spend", "banknote", "s3")}
               <div class="set-h">Bills and subscriptions</div>
-              ${sw("bill_reminders", me.bill_reminders, "Bill reminders", "3 days before a bill or subscription is due")}
-              ${sw("alert_renewals", me.alert_renewals, "Yearly renewals", "A week before a yearly or quarterly charge")}
-              ${sw("alert_price", me.alert_price, "Price increases", "When a subscription charges more than last time")}
+              ${sw("bill_reminders", me.bill_reminders, "Bill reminders", "3 days before a bill or subscription is due", "calendar", "s4")}
+              ${sw("alert_renewals", me.alert_renewals, "Yearly renewals", "A week before a yearly or quarterly charge", "repeat", "s7")}
+              ${sw("alert_price", me.alert_price, "Price increases", "When a subscription charges more than last time", "trend", "s8")}
               <div class="set-h">Summaries</div>
-              ${sw("weekly_digest", me.weekly_digest, "Weekly summary", "A short recap of your week by email")}
-              ${sw("monthly_report", me.monthly_report, "Monthly report", `Last month in review on the 1st, like the <a href="#/reports">Reports</a> page`)}
-              ${sw("update_notes", me.update_notes, "What's new", "A small popup after Keel updates")}
+              ${sw("weekly_digest", me.weekly_digest, "Weekly summary", "A short recap of your week by email", "spending", "s1")}
+              ${sw("monthly_report", me.monthly_report, "Monthly report", `Last month in review on the 1st, like the <a href="#/reports">Reports</a> page`, "reports", "s5")}
+              ${sw("update_notes", me.update_notes, "What's new", "A small popup after Keel updates", "sparkle", "s7")}
               <div class="row" style="margin-top:16px"><button class="btn primary">Save notifications</button><button type="button" class="btn" id="digest-now" ${smtp ? "" : 'disabled title="Needs email set up"'}>Send a summary now</button></div>
             </form>
           </section>
@@ -3096,18 +3116,18 @@
           </section>
           <section class="card" aria-labelledby="set-el">
             <div class="card-h"><h2 id="set-el" class="ic-h">${hIc("settings", "s1")}More settings</h2></div>
-            ${link("#/budget", "budget", "Categories and budgets", "Add, rename or archive categories; set monthly limits")}
-            ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV")}
-            ${link("#/cashflow", "cashflow", "Low balance warning", floor ? `Warns below ${money(floor)}` : "Not set")}
+            ${link("#/budget", "budget", "Categories and budgets", "Add, rename or archive categories; set monthly limits", "s2")}
+            ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV", "s1")}
+            ${link("#/cashflow", "cashflow", "Low balance warning", floor ? `Warns below ${money(floor)}` : "Not set", "s8")}
           </section>
           ${hh ? householdCard(hh, me, smtp) : ""}
           <section class="card" aria-labelledby="set-da">
             <div class="card-h"><h2 id="set-da" class="ic-h">${hIc("archive", "s3")}Your data</h2></div>
-            <div class="data-row">${icon("download")}<span class="grow"><b>Export transactions</b><span class="small muted">A spreadsheet file (CSV) for Excel, Numbers or Google Sheets. A split transaction gets one row per part.</span>
+            <div class="data-row">${hIc("download", "s1")}<span class="grow"><b>Export transactions</b><span class="small muted">A spreadsheet file (CSV) for Excel, Numbers or Google Sheets. A split transaction gets one row per part.</span>
               <span class="row data-act"><select id="exp-range" aria-label="Which transactions"><option value="all">All time</option><option value="ytd">This year</option><option value="last">Last year</option><option value="12m">Last 12 months</option></select><button class="btn" id="exp-csv">Download CSV</button></span></span></div>
-            <div class="data-row">${icon("archive")}<span class="grow"><b>Back up everything</b><span class="small muted">Accounts, transactions, budgets, goals, bills, rules and settings in one file. Bank logins aren't included, so keep the file private but know it can't reach your bank.</span>
+            <div class="data-row">${hIc("archive", "s3")}<span class="grow"><b>Back up everything</b><span class="small muted">Accounts, transactions, budgets, goals, bills, rules and settings in one file. Bank logins aren't included, so keep the file private but know it can't reach your bank.</span>
               <span class="row data-act"><button class="btn" id="bk-dl">Download backup</button></span></span></div>
-            ${hh && hh.role === "member" ? `<div class="data-row">${icon("upload")}<span class="grow"><b>Restore a backup</b><span class="small muted">Only ${esc(hh.owner.name || hh.owner.email)}, the household's owner, can restore a backup.</span></span></div>` : `<div class="data-row">${icon("upload")}<span class="grow"><b>Restore a backup</b><span class="small muted">Replaces everything here with what's in a backup file. Moving to a new server? Restore, then reconnect your bank and its accounts pick up where they left off.</span>
+            ${hh && hh.role === "member" ? `<div class="data-row">${hIc("upload", "s7")}<span class="grow"><b>Restore a backup</b><span class="small muted">Only ${esc(hh.owner.name || hh.owner.email)}, the household's owner, can restore a backup.</span></span></div>` : `<div class="data-row">${hIc("upload", "s7")}<span class="grow"><b>Restore a backup</b><span class="small muted">Replaces everything here with what's in a backup file. Moving to a new server? Restore, then reconnect your bank and its accounts pick up where they left off.</span>
               <span class="row data-act"><button class="btn" id="bk-restore">Choose a backup file…</button><input type="file" id="bk-file" accept=".json,application/json" hidden></span></span></div>`}
           </section>
           ${installCard()}
@@ -3120,7 +3140,12 @@
       applyTheme(t);
       $$("[data-theme-pick]", view).forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-checked", on); });
       toast(`Theme: ${b.textContent}`);
+      const tn = $("#set-theme-n span", view); if (tn) tn.textContent = `Theme: ${b.textContent}`;
     }));
+    $("#prefs").addEventListener("change", () => {
+      const n = $("#set-alerts-n span", view), f = $("#prefs", view);
+      if (n) n.innerHTML = `<b>${alertsOn((k) => f.elements[k] && f.elements[k].checked)}</b> of ${ALERTS.length} alerts on`;
+    });
     $("#prefs").onsubmit = async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -3143,6 +3168,7 @@
         toast("Name saved");
         const who = $(".side .who"); if (who) who.textContent = pb.authStore.record.name || pb.authStore.record.email;
         const av = $(".side .foot .av"); if (av) av.outerHTML = meAv(pb.authStore.record);
+        const hn = $(".set-me h2", view); if (hn) hn.textContent = pb.authStore.record.name || pb.authStore.record.email.split("@")[0];
       } catch (err) { fail(err); }
     };
     const ia = $("#install-app"); if (ia) ia.onclick = runInstall;

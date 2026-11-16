@@ -1,5 +1,5 @@
 {
-  "version": "2.16.5",
+  "version": "2.16.6",
   "released": "2026-11-16",
-  "motd": "A livelier sidebar: every page has its own color, the page you're on lights up, and your initial sits at the bottom with a link to settings."
+  "motd": "A livelier Settings page: a banner with you and your setup, the theme picked from little previews, and a colored icon on each alert that dims when it's off."
 }
