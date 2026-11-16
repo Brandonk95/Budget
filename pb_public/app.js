@@ -598,15 +598,20 @@
     return ROUTES[r] ? r : "dashboard";
   }
 
+  // each page wears its own color in the sidebar
+  const NAV_C = { dashboard: 1, budget: 2, transactions: 7, spending: 4, reports: 5, recurring: 3, cashflow: 1, networth: 6, accounts: 2, goals: 8, settings: 7 };
+  const meAv = (me) => `<span class="av" style="--c:var(--s${(hashStr(String(me.email || "").toLowerCase()) % 8) + 1})" aria-hidden="true">${esc(((me.name || me.email || "?").trim()[0] || "?").toUpperCase())}</span>`;
+
   function renderShell() {
     const me = pb.authStore.record;
     $("#app").innerHTML = `
       <div class="shell">
         <aside class="side">
           ${brandMark()}
-          <nav class="nav" aria-label="Main">${Object.keys(ROUTES).filter((k) => !ROUTES[k].hidden).map((k) => `<a href="#/${k}" data-r="${k}" class="${ROUTES[k].main ? "" : "sec"}">${icon(k)}<span>${ROUTES[k].title}</span></a>`).join("")}
+          <nav class="nav" aria-label="Main">${Object.keys(ROUTES).filter((k) => !ROUTES[k].hidden).map((k) => `<a href="#/${k}" data-r="${k}" class="${ROUTES[k].main ? "" : "sec"}" style="--c:var(--s${NAV_C[k] || 1})">${icon(k)}<span>${ROUTES[k].title}</span></a>`).join("")}
             <button type="button" class="more" id="nav-more" aria-haspopup="dialog">${icon("more")}<span>More</span></button></nav>
-          <div class="foot"><div class="who" title="${esc(me.email)}">${esc(me.name || me.email)}</div><div class="ver">Keel v${esc(state.status.version || "")}</div></div>
+          <a class="foot" href="#/settings" aria-label="Your profile and settings">${meAv(me)}<span class="foot-t"><span class="who" title="${esc(me.email)}">${esc(me.name || me.email)}</span><span class="ver">Keel v${esc(state.status.version || "")}</span></span></a>
+          <svg class="side-waves" viewBox="0 0 960 120" preserveAspectRatio="none" aria-hidden="true"><path d="M0 60c120 30 240 30 360 0s240-30 360 0 240 30 360 0v60H0z"/><path d="M0 80c120-24 240-24 360 0s240 24 360 0 240-24 360 0v40H0z"/></svg>
         </aside>
         <main>
           <div class="topbar">
@@ -629,7 +634,7 @@
     const r = currentRoute();
     const root = $("#modal-root");
     root.innerHTML = `<div class="modal-bg sheet-bg"><div class="modal sheet" role="dialog" aria-modal="true" aria-label="More pages">
-      <nav class="sheet-nav">${[["Plan", ["recurring", "cashflow", "goals"]], ["Money", ["reports", "networth", "accounts"]], ["You", ["settings"]]].map(([h, ks]) => `<div class="sheet-h">${h}</div>${ks.filter((k) => ROUTES[k]).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}">${icon(k)}${ROUTES[k].title}</a>`).join("")}`).join("")}</nav>
+      <nav class="sheet-nav">${[["Plan", ["recurring", "cashflow", "goals"]], ["Money", ["reports", "networth", "accounts"]], ["You", ["settings"]]].map(([h, ks]) => `<div class="sheet-h">${h}</div>${ks.filter((k) => ROUTES[k]).map((k) => `<a href="#/${k}" class="${k === r ? "active" : ""}" style="--c:var(--s${NAV_C[k] || 1})">${icon(k)}${ROUTES[k].title}</a>`).join("")}`).join("")}</nav>
       <div class="foot">${esc(pb.authStore.record.email)} · Keel v${esc(state.status.version || "")}</div></div></div>`;
     const bg = $(".modal-bg", root);
     const close = () => { root.innerHTML = ""; document.removeEventListener("keydown", onKey); };
@@ -3137,6 +3142,7 @@
         await saveMe({ name: new FormData(e.target).get("name") });
         toast("Name saved");
         const who = $(".side .who"); if (who) who.textContent = pb.authStore.record.name || pb.authStore.record.email;
+        const av = $(".side .foot .av"); if (av) av.outerHTML = meAv(pb.authStore.record);
       } catch (err) { fail(err); }
     };
     const ia = $("#install-app"); if (ia) ia.onclick = runInstall;

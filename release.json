@@ -1,5 +1,5 @@
 {
-  "version": "2.16.4",
+  "version": "2.16.5",
   "released": "2026-11-16",
-  "motd": "Every page got livelier: colored lead tiles, icon badges on cards, gradient charts, goals in their own colors and a hover accent on rows."
+  "motd": "A livelier sidebar: every page has its own color, the page you're on lights up, and your initial sits at the bottom with a link to settings."
 }

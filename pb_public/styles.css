@@ -1477,3 +1477,47 @@ svg.spark { color: var(--s1); }
 .chart .vbar { transition: filter var(--t) var(--ease); }
 .chart svg:hover .vbar { filter: saturate(1.1); }
 .av[style*="--c"] { color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
+
+/* ---------- sidebar: every page in its own color ---------- */
+.side {
+  overflow-x: hidden;
+  background: radial-gradient(130% 36% at 0% 0%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 70%), var(--surface);
+}
+.side > .brand, .side > .nav, .side > .foot { position: relative; z-index: 1; }
+.side .nav a { padding: 4px 12px 4px 6px; gap: 10px; }
+.side .nav a svg {
+  width: 30px; height: 30px; padding: 5px; box-sizing: border-box; border-radius: 9px;
+  color: color-mix(in srgb, var(--c, var(--primary)) 75%, var(--muted));
+  transition: background-color var(--t) var(--ease), color var(--t) var(--ease), transform 320ms var(--spring);
+}
+.side .nav a:hover { background: color-mix(in srgb, var(--c, var(--primary)) 8%, transparent); }
+.side .nav a:hover svg { color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); transform: scale(1.08) rotate(-6deg); }
+.side .nav a.active, .side .nav a.active:hover { background: color-mix(in srgb, var(--c, var(--primary)) 12%, var(--surface)); color: var(--text); }
+.side .nav a.active svg { color: #fff; background: var(--c); transform: none; box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--c) 70%, transparent); animation: nav-pop 460ms var(--spring); }
+.side .nav a.active::before { background: var(--c, var(--primary)); }
+@keyframes nav-pop { 0% { transform: scale(.7) rotate(-12deg); } 60% { transform: scale(1.1) rotate(3deg); } 100% { transform: none; } }
+
+.side .foot { display: flex; gap: 10px; align-items: center; margin: auto -4px 0; padding: 14px 8px 8px; border-radius: 0 0 var(--radius-sm) var(--radius-sm); color: var(--muted); transition: background-color var(--t) var(--ease); }
+.side .foot:hover { color: var(--muted); background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.side .foot .av { width: 34px; height: 34px; font-size: 14px; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px color-mix(in srgb, var(--c) 45%, transparent); }
+.side .foot-t { display: flex; flex-direction: column; min-width: 0; }
+.side .foot .who { display: block; }
+.side-waves { position: absolute; left: 0; bottom: 0; width: 200%; height: 72px; pointer-events: none; z-index: 0; animation: si-drift 28s linear infinite; }
+.side-waves path:first-child { fill: color-mix(in srgb, var(--primary) 6%, transparent); }
+.side-waves path:last-child { fill: color-mix(in srgb, var(--primary) 9%, transparent); }
+
+.sheet-nav a[style*="--c"] svg { color: var(--c); }
+.sheet-nav a[style*="--c"]:hover, .sheet-nav a[style*="--c"].active { background: color-mix(in srgb, var(--c) 12%, var(--surface)); color: var(--text); }
+
+@media (max-width: 760px) {
+  .side { background: color-mix(in srgb, var(--surface) 92%, transparent); overflow: visible; }
+  .side-waves, .side .foot { display: none; }
+  .side .nav a { padding: 6px 2px; gap: 4px; }
+  .side .nav a svg { width: 22px; height: 22px; padding: 0; border-radius: 0; }
+  .side .nav a:hover, .side .nav a.active, .side .nav a.active:hover { background: none; }
+  .side .nav a:hover svg { background: none; transform: none; }
+  .side .nav a.active { color: var(--text); }
+  .side .nav a.active svg { width: 44px; height: 26px; padding: 3px 12px; border-radius: 99px; color: #fff; background: var(--c); }
+}
+@media (prefers-reduced-motion: reduce) { .side-waves { animation: none; } }
+@media (forced-colors: active) { .side .nav a.active svg { forced-color-adjust: none; } }
