@@ -30,7 +30,7 @@ function duplicates(app, user, created) {
     const to = util.dateFromJs(new Date(dayMs(t.getString("date")) + 2 * DAY));
     const twins = app.findRecordsByFilter("transactions",
       "user = {:u} && account = {:a} && id != {:id} && pending = false && amount = {:amt} && date >= {:f} && date <= {:t}",
-      "date", 0, 0, { u: user.id, a: t.getString("account"), id: t.id, amt, f: from, t: to })
+      "date", 0, 0, { u: require(`${__hooks}/lib/household.js`).ownerId(user), a: t.getString("account"), id: t.id, amt, f: from, t: to })
       .filter((o) => recurring.normalizePayee(nameOf(o)) === key);
     if (!twins.length) continue;
     const pair = [t.id, twins[0].id].sort().join(":");
@@ -51,7 +51,7 @@ function duplicates(app, user, created) {
 function priceIncreases(app, user) {
   if (!enabled(user, "alert_price")) return 0;
   const notify = require(`${__hooks}/lib/notify.js`);
-  const subs = require(`${__hooks}/lib/recurring.js`).subscriptions(app, user.id).subscriptions;
+  const subs = require(`${__hooks}/lib/recurring.js`).subscriptions(app, require(`${__hooks}/lib/household.js`).ownerId(user)).subscriptions;
   const ups = subs.filter((s) => s.status === "active" && s.price_change && s.price_change.to > s.price_change.from
     && daysBetween(s.price_change.date, util.today()) <= 14)
     .filter((s) => notify.claimKey(app, user.id, `price:${s.id}:${s.price_change.date}`));
@@ -72,7 +72,7 @@ function renewals(app, user) {
   const notify = require(`${__hooks}/lib/notify.js`);
   const recurring = require(`${__hooks}/lib/recurring.js`);
   const today = dayOf(util.today());
-  const items = recurring.list(app, user.id, util.currentMonth()).items
+  const items = recurring.list(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth()).items
     .filter((it) => it.status === "active" && it.kind !== "income" && (it.frequency === "yearly" || it.frequency === "quarterly"));
   const due = [];
   for (const it of items) {
@@ -97,7 +97,7 @@ function paychecks(app, user, created) {
   const notify = require(`${__hooks}/lib/notify.js`);
   const recurring = require(`${__hooks}/lib/recurring.js`);
   const sources = {};
-  for (const r of app.findRecordsByFilter("recurring", "user = {:u} && kind = 'income' && status = 'active'", "", 0, 0, { u: user.id })) {
+  for (const r of app.findRecordsByFilter("recurring", "user = {:u} && kind = 'income' && status = 'active'", "", 0, 0, { u: require(`${__hooks}/lib/household.js`).ownerId(user) })) {
     if (r.getString("merchant_key")) sources[r.getString("merchant_key")] = r.getString("name");
   }
   const landed = created.filter((t) => t.getFloat("amount") > 0 && !t.getBool("pending") && recent(t, 3)
@@ -106,7 +106,7 @@ function paychecks(app, user, created) {
   const total = landed.reduce((s, t) => s + t.getFloat("amount"), 0);
   let left = "";
   try {
-    const d = require(`${__hooks}/lib/insights.js`).compute(app, user.id, util.currentMonth());
+    const d = require(`${__hooks}/lib/insights.js`).compute(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth());
     if (d.budgeted > 0) left = `<p>You have <b>${util.money(Math.max(0, d.budgeted - d.spent))}</b> left to spend this month, about <b>${util.money(d.safe_per_day)} a day</b> for the next ${d.remaining_days} days.</p>`;
   } catch (_) {}
   const rows = landed.map((t) => notify.row([util.esc(sources[recurring.normalizePayee(nameOf(t))]), pretty(t.getString("date")), `<span style="color:#0f7a52">+${util.money(t.getFloat("amount"))}</span>`]));

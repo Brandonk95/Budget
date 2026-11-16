@@ -116,7 +116,7 @@ function forecast(app, userId, opts) {
 // Daily: email once a week at most when checking is headed below the user's floor in the next 14 days.
 function lowBalanceAlert(app, user) {
   if (!user.getBool("cash_alerts") || !user.getString("email")) return false;
-  const f = forecast(app, user.id, { days: 14 });
+  const f = forecast(app, require(`${__hooks}/lib/household.js`).ownerId(user), { days: 14 });
   if (f.empty || !f.below_floor_day) return false;
   const notify = require(`${__hooks}/lib/notify.js`);
   const monday = new Date(); monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));

@@ -61,11 +61,21 @@ onRecordAfterCreateSuccess((e) => {
   e.next();
 }, "users");
 
+// household is changed only by the server (invite, join, leave, remove)
+onRecordCreateRequest((e) => {
+  if (!e.hasSuperuserAuth()) e.record.set("household", "");
+  e.next();
+}, "users");
+onRecordUpdateRequest((e) => {
+  if (!e.hasSuperuserAuth()) e.record.set("household", e.record.original().getString("household"));
+  e.next();
+}, "users");
+
 // ---------------------------------------------------------------- ownership guards
 // API rules force `user` to be the caller; these make sure related records are theirs too.
 onRecordCreateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();
-  const uid = e.auth ? e.auth.id : "";
+  const uid = e.auth ? (e.auth.getString("household") || (e.auth.getString("household") || e.auth.id)) : "";
   const rec = e.record;
   const name = rec.collection().name;
   const owned = (col, id) => {
@@ -90,7 +100,7 @@ onRecordCreateRequest((e) => {
 
 onRecordUpdateRequest((e) => {
   if (e.hasSuperuserAuth()) return e.next();
-  const uid = e.auth ? e.auth.id : "";
+  const uid = e.auth ? (e.auth.getString("household") || (e.auth.getString("household") || e.auth.id)) : "";
   const rec = e.record;
   const name = rec.collection().name;
   const owned = (col, id) => {
@@ -156,7 +166,7 @@ routerAdd("POST", "/api/budget/connect", (e) => {
   try { accessUrl = simplefin.claim(body.setup_token); } catch (err) { throw new BadRequestError(util.errMsg(err)); }
 
   const conn = new Record(e.app.findCollectionByNameOrId("bank_connections"));
-  conn.set("user", e.auth.id);
+  conn.set("user", (e.auth.getString("household") || e.auth.id));
   conn.set("provider", "simplefin");
   conn.set("name", String(body.name || "SimpleFIN").slice(0, 80));
   conn.set("secret", accessUrl);
@@ -167,7 +177,7 @@ routerAdd("POST", "/api/budget/connect", (e) => {
 
 routerAdd("POST", "/api/budget/sync", (e) => {
   const jobs = require(`${__hooks}/lib/jobs.js`);
-  return e.json(200, jobs.syncUser(e.app, e.auth.id));
+  return e.json(200, jobs.syncUser(e.app, (e.auth.getString("household") || e.auth.id)));
 }, $apis.requireAuth("users"));
 
 // Bulk CSV import (rows already parsed/mapped in the browser). De-duplicated on re-import.
@@ -182,13 +192,13 @@ routerAdd("POST", "/api/budget/import", (e) => {
 
   let account;
   try { account = e.app.findRecordById("accounts", String(body.account || "")); } catch (_) { throw new BadRequestError("Pick an account."); }
-  if (account.getString("user") !== e.auth.id) throw new ForbiddenError("That account isn't yours.");
+  if (account.getString("user") !== (e.auth.getString("household") || e.auth.id)) throw new ForbiddenError("That account isn't yours.");
 
   let inserted = 0, skipped = 0, invalid = 0;
   const created = [];
   e.app.runInTransaction((txApp) => {
     const col = txApp.findCollectionByNameOrId("transactions");
-    const ctx = rules.context(txApp, e.auth.id);
+    const ctx = rules.context(txApp, (e.auth.getString("household") || e.auth.id));
     const occurrences = {};
     for (const row of rows) {
       const date = String(row.date || "");
@@ -204,7 +214,7 @@ routerAdd("POST", "/api/budget/import", (e) => {
         continue;
       } catch (_) {}
       const t = new Record(col);
-      t.set("user", e.auth.id);
+      t.set("user", (e.auth.getString("household") || e.auth.id));
       t.set("account", account.id);
       t.set("external_id", ext);
       t.set("date", date + " 12:00:00.000Z");
@@ -217,15 +227,67 @@ routerAdd("POST", "/api/budget/import", (e) => {
       inserted++;
     }
   });
-  jobs.afterNewTransactions(e.app, e.app.findRecordById("users", e.auth.id), created);
+  jobs.afterNewTransactions(e.app, e.app.findRecordById("users", (e.auth.getString("household") || e.auth.id)), created);
   return e.json(200, { inserted, skipped, invalid });
+}, $apis.requireAuth("users"));
+
+// ---------------------------------------------------------------- household
+routerAdd("GET", "/api/budget/household", (e) => {
+  return e.json(200, require(`${__hooks}/lib/household.js`).info(e.app, e.auth));
+}, $apis.requireAuth("users"));
+
+routerAdd("POST", "/api/budget/household/invite", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  const hh = require(`${__hooks}/lib/household.js`);
+  try { hh.invite(e.app, e.auth, (e.requestInfo().body || {}).email); } catch (err) { throw new BadRequestError(util.errMsg(err)); }
+  return e.json(200, hh.info(e.app, e.auth));
+}, $apis.requireAuth("users"));
+
+routerAdd("DELETE", "/api/budget/household/invite/{id}", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  const hh = require(`${__hooks}/lib/household.js`);
+  try { hh.cancelInvite(e.app, e.auth, e.request.pathValue("id")); } catch (err) { throw new BadRequestError(util.errMsg(err)); }
+  return e.json(200, hh.info(e.app, e.auth));
+}, $apis.requireAuth("users"));
+
+// Public: who sent an invite, so the join page can say so before you sign in.
+routerAdd("GET", "/api/budget/household/invite-info", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  try { return e.json(200, require(`${__hooks}/lib/household.js`).preview(e.app, e.request.url.query().get("token"))); }
+  catch (err) { throw new BadRequestError(util.errMsg(err)); }
+});
+
+routerAdd("POST", "/api/budget/household/join", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  try { return e.json(200, require(`${__hooks}/lib/household.js`).join(e.app, e.auth, (e.requestInfo().body || {}).token)); }
+  catch (err) { throw new BadRequestError(util.errMsg(err)); }
+}, $apis.requireAuth("users"));
+
+routerAdd("POST", "/api/budget/household/leave", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  try { return e.json(200, require(`${__hooks}/lib/household.js`).leave(e.app, e.auth)); }
+  catch (err) { throw new BadRequestError(util.errMsg(err)); }
+}, $apis.requireAuth("users"));
+
+routerAdd("POST", "/api/budget/household/remove", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  if (e.auth.getString("household")) throw new ForbiddenError("Only the household's owner can remove people.");
+  try { return e.json(200, require(`${__hooks}/lib/household.js`).remove(e.app, e.auth, (e.requestInfo().body || {}).user)); }
+  catch (err) { throw new BadRequestError(util.errMsg(err)); }
+}, $apis.requireAuth("users"));
+
+// Budget total, expected income and the low-balance level are shared by the household.
+routerAdd("POST", "/api/budget/household/settings", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  try { return e.json(200, require(`${__hooks}/lib/household.js`).saveShared(e.app, e.auth, e.requestInfo().body || {})); }
+  catch (err) { throw new BadRequestError(util.errMsg(err)); }
 }, $apis.requireAuth("users"));
 
 // Your data: transactions as CSV, a full backup, and restoring one.
 routerAdd("GET", "/api/budget/export/transactions", (e) => {
   const backup = require(`${__hooks}/lib/backup.js`);
   const q = e.request.url.query();
-  const out = backup.transactionsCsv(e.app, e.auth.id, q.get("from"), q.get("to"));
+  const out = backup.transactionsCsv(e.app, (e.auth.getString("household") || e.auth.id), q.get("from"), q.get("to"));
   const h = e.response.header();
   h.set("Content-Type", "text/csv; charset=utf-8");
   h.set("Content-Disposition", `attachment; filename="keel-transactions-${new Date().toISOString().slice(0, 10)}.csv"`);
@@ -236,7 +298,7 @@ routerAdd("GET", "/api/budget/export/transactions", (e) => {
 
 routerAdd("GET", "/api/budget/backup", (e) => {
   const backup = require(`${__hooks}/lib/backup.js`);
-  const data = backup.backup(e.app, e.auth.id);
+  const data = backup.backup(e.app, (e.auth.getString("household") || e.auth.id));
   try { data.version = require(`${__hooks}/lib/release.js`).info().version; } catch (_) {}
   const h = e.response.header();
   h.set("Content-Disposition", `attachment; filename="keel-backup-${new Date().toISOString().slice(0, 10)}.json"`);
@@ -250,8 +312,9 @@ routerAdd("POST", "/api/budget/restore", (e) => {
   const backup = require(`${__hooks}/lib/backup.js`);
   const body = e.requestInfo().body || {};
   if (body.confirm !== true) throw new BadRequestError("Restoring replaces all your data; confirm first.");
+  if (e.auth.getString("household")) throw new ForbiddenError("Only the household's owner can restore a backup.");
   try {
-    return e.json(200, { restored: backup.restore(e.app, e.auth.id, body.backup) });
+    return e.json(200, { restored: backup.restore(e.app, (e.auth.getString("household") || e.auth.id), body.backup) });
   } catch (err) {
     throw new BadRequestError(util.errMsg(err));
   }
@@ -259,74 +322,74 @@ routerAdd("POST", "/api/budget/restore", (e) => {
 
 routerAdd("POST", "/api/budget/apply-rules", (e) => {
   const rules = require(`${__hooks}/lib/rules.js`);
-  return e.json(200, { updated: rules.applyToUncategorized(e.app, e.auth.id) });
+  return e.json(200, { updated: rules.applyToUncategorized(e.app, (e.auth.getString("household") || e.auth.id)) });
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/insights", (e) => {
   const insights = require(`${__hooks}/lib/insights.js`);
   const month = e.request.url.query().get("month");
-  return e.json(200, insights.compute(e.app, e.auth.id, month));
+  return e.json(200, insights.compute(e.app, (e.auth.getString("household") || e.auth.id), month));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/spending", (e) => {
   const spending = require(`${__hooks}/lib/spending.js`);
-  return e.json(200, spending.compute(e.app, e.auth.id, e.request.url.query().get("month")));
+  return e.json(200, spending.compute(e.app, (e.auth.getString("household") || e.auth.id), e.request.url.query().get("month")));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/recurring", (e) => {
   const recurring = require(`${__hooks}/lib/recurring.js`);
-  return e.json(200, recurring.list(e.app, e.auth.id, e.request.url.query().get("month")));
+  return e.json(200, recurring.list(e.app, (e.auth.getString("household") || e.auth.id), e.request.url.query().get("month")));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/subscriptions", (e) => {
   const recurring = require(`${__hooks}/lib/recurring.js`);
-  return e.json(200, recurring.subscriptions(e.app, e.auth.id));
+  return e.json(200, recurring.subscriptions(e.app, (e.auth.getString("household") || e.auth.id)));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/recurring/{id}/history", (e) => {
   const recurring = require(`${__hooks}/lib/recurring.js`);
-  return e.json(200, recurring.history(e.app, e.auth.id, e.request.pathValue("id")));
+  return e.json(200, recurring.history(e.app, (e.auth.getString("household") || e.auth.id), e.request.pathValue("id")));
 }, $apis.requireAuth("users"));
 
 routerAdd("POST", "/api/budget/recurring/detect", (e) => {
   const recurring = require(`${__hooks}/lib/recurring.js`);
-  return e.json(200, recurring.detect(e.app, e.auth.id));
+  return e.json(200, recurring.detect(e.app, (e.auth.getString("household") || e.auth.id)));
 }, $apis.requireAuth("users"));
 
 routerAdd("POST", "/api/budget/transactions/{id}/split", (e) => {
   const splits = require(`${__hooks}/lib/splits.js`);
   const body = e.requestInfo().body || {};
-  return e.json(200, splits.save(e.app, e.auth.id, e.request.pathValue("id"), body.parts || []));
+  return e.json(200, splits.save(e.app, (e.auth.getString("household") || e.auth.id), e.request.pathValue("id"), body.parts || []));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/forecast", (e) => {
   const forecast = require(`${__hooks}/lib/forecast.js`);
   const q = e.request.url.query();
   const accounts = (q.get("accounts") || "").split(",").filter(Boolean);
-  return e.json(200, forecast.forecast(e.app, e.auth.id, { days: parseInt(q.get("days"), 10) || 45, accounts }));
+  return e.json(200, forecast.forecast(e.app, (e.auth.getString("household") || e.auth.id), { days: parseInt(q.get("days"), 10) || 45, accounts }));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/goals", (e) => {
   const goals = require(`${__hooks}/lib/goals.js`);
-  return e.json(200, goals.list(e.app, e.auth.id));
+  return e.json(200, goals.list(e.app, (e.auth.getString("household") || e.auth.id)));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/goals/{id}", (e) => {
   const goals = require(`${__hooks}/lib/goals.js`);
-  return e.json(200, goals.detail(e.app, e.auth.id, e.request.pathValue("id")));
+  return e.json(200, goals.detail(e.app, (e.auth.getString("household") || e.auth.id), e.request.pathValue("id")));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/reports", (e) => {
   const reports = require(`${__hooks}/lib/reports.js`);
   const q = e.request.url.query();
-  if (q.get("kind") === "year") return e.json(200, reports.year(e.app, e.auth.id, parseInt(q.get("year"), 10)));
-  return e.json(200, reports.month(e.app, e.auth.id, q.get("month")));
+  if (q.get("kind") === "year") return e.json(200, reports.year(e.app, (e.auth.getString("household") || e.auth.id), parseInt(q.get("year"), 10)));
+  return e.json(200, reports.month(e.app, (e.auth.getString("household") || e.auth.id), q.get("month")));
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/networth", (e) => {
   const networth = require(`${__hooks}/lib/networth.js`);
   const days = parseInt(e.request.url.query().get("days"), 10) || 90;
-  return e.json(200, networth.history(e.app, e.auth.id, days));
+  return e.json(200, networth.history(e.app, (e.auth.getString("household") || e.auth.id), days));
 }, $apis.requireAuth("users"));
 
 routerAdd("POST", "/api/budget/digest", (e) => {

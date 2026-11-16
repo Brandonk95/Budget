@@ -1101,3 +1101,15 @@ a.card:hover, .card.click:hover, .goal[data-id]:hover { transform: translateY(-2
 .restore-list { list-style: none; padding: 0; margin: 0 0 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
 .restore-list li { color: var(--muted); } .restore-list b { color: var(--text); margin-right: 4px; }
 .callout.warn { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); margin-bottom: 4px; }
+
+/* Settings > Household */
+.hh-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.hh-row .grow { display: flex; flex-direction: column; min-width: 0; }
+.hh-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.hh-name b { overflow-wrap: anywhere; } .hh-name .pill { padding: 0 8px; }
+.hh-row .av.muted { background: var(--surface-2); color: var(--muted); }
+.hh-add { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.hh-invite { gap: 8px; flex-wrap: nowrap; margin-top: 4px; }
+.hh-invite input { flex: 1; min-width: 0; }
+.hh-pending { margin-bottom: 12px; }
+@media (max-width: 420px) { .hh-invite { flex-wrap: wrap; } .hh-invite .btn { width: 100%; justify-content: center; } }

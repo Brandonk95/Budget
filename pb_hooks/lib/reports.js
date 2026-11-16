@@ -176,7 +176,7 @@ function monthlyEmail(app, user, force) {
   if (!force && new Date().getDate() !== 1) return false;
   const notify = require(`${__hooks}/lib/notify.js`);
   const key = util.shiftMonth(util.currentMonth(), -1);
-  const rep = month(app, user.id, key);
+  const rep = month(app, require(`${__hooks}/lib/household.js`).ownerId(user), key);
   if (!(rep.spent > 0 || rep.income > 0)) return false;
   if (!notify.claimKey(app, user.id, "report:" + key)) return false;
   const [yy, mm] = key.split("-").map(Number);

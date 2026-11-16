@@ -42,17 +42,23 @@ function syncConnection(app, conn) {
   }
 }
 
+// `user` owns the data. Its bookkeeping runs once; the emails go to everyone in the household,
+// each by their own preferences.
 function afterNewTransactions(app, user, created) {
   const notify = require(`${__hooks}/lib/notify.js`);
+  const household = require(`${__hooks}/lib/household.js`);
+  if (user.getString("household")) user = app.findRecordById("users", user.getString("household"));
   try { require(`${__hooks}/lib/networth.js`).snapshot(app, user.id); } catch (err) { app.logger().error("net worth snapshot", "error", util.errMsg(err)); }
   if (created.length) {
     try { require(`${__hooks}/lib/recurring.js`).detect(app, user.id); } catch (err) { app.logger().error("recurring detect", "error", util.errMsg(err)); }
   }
-  try { notify.largeTransactions(app, user, created); } catch (err) { app.logger().error("large txn email", "error", util.errMsg(err)); }
   const alerts = require(`${__hooks}/lib/alerts.js`);
-  try { alerts.duplicates(app, user, created); } catch (err) { app.logger().error("duplicate charge email", "error", util.errMsg(err)); }
-  try { alerts.paychecks(app, user, created); } catch (err) { app.logger().error("paycheck email", "error", util.errMsg(err)); }
-  try { notify.checkBudgets(app, user); } catch (err) { app.logger().error("budget alert email", "error", util.errMsg(err)); }
+  for (const r of household.recipients(app, user)) {
+    try { notify.largeTransactions(app, r, created); } catch (err) { app.logger().error("large txn email", "error", util.errMsg(err)); }
+    try { alerts.duplicates(app, r, created); } catch (err) { app.logger().error("duplicate charge email", "error", util.errMsg(err)); }
+    try { alerts.paychecks(app, r, created); } catch (err) { app.logger().error("paycheck email", "error", util.errMsg(err)); }
+    try { notify.checkBudgets(app, r); } catch (err) { app.logger().error("budget alert email", "error", util.errMsg(err)); }
+  }
 }
 
 function eachUser(app, fn) {
@@ -89,7 +95,8 @@ function dailyAll(app) {
   const notify = require(`${__hooks}/lib/notify.js`);
   const networth = require(`${__hooks}/lib/networth.js`);
   eachUser(app, (u) => {
-    networth.snapshot(app, u.id);
+    // a household member's data is the owner's, which gets its own snapshot
+    if (!u.getString("household")) networth.snapshot(app, u.id);
     notify.billReminders(app, u);
     try { require(`${__hooks}/lib/forecast.js`).lowBalanceAlert(app, u); } catch (err) { app.logger().error("cash forecast alert", "error", util.errMsg(err)); }
     const alerts = require(`${__hooks}/lib/alerts.js`);

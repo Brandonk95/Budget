@@ -50,6 +50,10 @@
   }
   const fail = (err) => { console.error(err); toast(errText(err), true); };
 
+  // In a shared household everything belongs to the owner; otherwise it's yours.
+  const dataUser = () => (pb.authStore.record && (pb.authStore.record.household || pb.authStore.record.id)) || "";
+  const SHARED_SETTINGS = ["budget_total", "income_override", "cash_floor"];
+
   async function api(path, opts = {}) {
     return pb.send(path, { method: opts.method || "GET", body: opts.body, query: opts.query });
   }
@@ -140,7 +144,7 @@
     state.accounts.map((a) => `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.name)}${a.institution ? " · " + esc(a.institution) : ""}</option>`).join("");
 
   // ------------------------------------------------------------------ auth
-  function renderAuth(mode = "login") {
+  function renderAuth(mode = "login", email = "") {
     document.title = state.status.app_name;
     $("#app").innerHTML = `
       <div class="auth"><div class="card">
@@ -153,7 +157,7 @@
         </div>
         <form id="auth-form" class="stack">
           ${mode === "register" ? `<label class="field"><span>Name</span><input name="name" autocomplete="name"></label>` : ""}
-          <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email"></label>
+          <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" value="${esc(email)}"></label>
           ${mode !== "forgot" ? `<label class="field"><span>Password</span><input name="password" type="password" required minlength="8" autocomplete="${mode === "register" ? "new-password" : "current-password"}"></label>` : ""}
           <button class="btn primary" style="width:100%;justify-content:center">${mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Send reset link"}</button>
           ${mode === "login" && state.status.smtp ? `<p class="small" style="text-align:center"><a href="#" id="forgot">Forgot password?</a></p>` : ""}
@@ -179,6 +183,8 @@
           if (state.status.smtp) pb.collection("users").requestVerification(fd.email).catch(() => {});
         }
         await pb.collection("users").authWithPassword(fd.email, fd.password);
+        let pending = ""; try { pending = sessionStorage.getItem("keel_join") || ""; } catch (_) {}
+        if (pending) { history.replaceState(null, "", "#/join/" + pending); await start(); return; }
         await start();
       } catch (err) { fail(err); btn.disabled = false; btn.classList.remove("loading"); }
     };
@@ -294,10 +300,70 @@
     void goHome;
   }
 
+  // ------------------------------------------------------------------ household invite
+  async function renderJoin(token) {
+    const name = state.status.app_name || "Keel";
+    document.title = `Join a household · ${name}`;
+    actionCard(`<div class="act-wait"><span class="loading-dots">Checking your invite</span></div>`);
+    const clearPending = () => { try { sessionStorage.removeItem("keel_join"); } catch (_) {} };
+    const leaveTo = (hash) => { clearPending(); history.replaceState(null, "", hash); location.reload(); };
+    let inv;
+    try { inv = await api("/api/budget/household/invite-info", { query: { token } }); } catch (err) {
+      clearPending();
+      $("#act-body").innerHTML = `${actSeal(false)}<h1 class="act-h">This invite didn't work</h1><p class="act-p">${esc(errText(err))}</p><button class="btn act-go" id="act-home">${pb.authStore.isValid ? `Open ${esc(name)}` : "Go to sign in"}</button>`;
+      $("#act-home").onclick = () => leaveTo(pb.authStore.isValid ? "#/" : "#/login");
+      return;
+    }
+    const from = esc(inv.from);
+    if (!pb.authStore.isValid) {
+      try { sessionStorage.setItem("keel_join", token); } catch (_) {}
+      $("#act-body").innerHTML = `<h1 class="act-h">${from} invited you</h1>
+        <p class="act-p">to share their budget: the same accounts, transactions, budget, goals and bills, with your own login. Create an account or sign in with <b>${esc(inv.email)}</b> to accept.</p>
+        <button class="btn primary act-go" id="jn-new">Create an account</button><button class="btn act-go" id="jn-in">I already have an account</button>`;
+      $("#jn-new").onclick = () => { history.replaceState(null, "", "#/register"); renderAuth("register", inv.email); };
+      $("#jn-in").onclick = () => { history.replaceState(null, "", "#/login"); renderAuth("login", inv.email); };
+      return;
+    }
+    const me = pb.authStore.record;
+    if (me.email.toLowerCase() !== inv.email.toLowerCase()) {
+      $("#act-body").innerHTML = `${actSeal(false)}<h1 class="act-h">Wrong account</h1>
+        <p class="act-p">This invite is for <b>${esc(inv.email)}</b>, but you're signed in as <b>${esc(me.email)}</b>. Sign out, then open the link again and sign in with ${esc(inv.email)}.</p>
+        <button class="btn primary act-go" id="jn-out">Sign out</button><button class="btn act-go" id="act-home">Open ${esc(name)}</button>`;
+      $("#jn-out").onclick = () => { pb.authStore.clear(); try { sessionStorage.setItem("keel_join", token); } catch (_) {} renderJoin(token); };
+      $("#act-home").onclick = () => leaveTo("#/");
+      return;
+    }
+    // do they have data of their own that will be set aside?
+    let own = 0;
+    if (!me.household) { try { own = (await pb.collection("transactions").getList(1, 1)).totalItems + (await pb.collection("accounts").getList(1, 1)).totalItems; } catch (_) {} }
+    $("#act-body").innerHTML = `<h1 class="act-h">Join ${from}'s household?</h1>
+      <ul class="act-list" style="text-align:left">
+        <li>${actIcon("mail")}<span>You'll see and edit ${from}'s accounts, transactions, budget, goals and bills.</span></li>
+        <li>${actIcon("bell")}<span>Your email alerts, summaries and theme stay your own.</span></li>
+      </ul>
+      ${me.household ? `<p class="callout warn small" style="text-align:left">You're already in a household. Joining this one moves you to ${from}'s.</p>` : ""}
+      ${own ? `<p class="callout warn small" style="text-align:left">Your own ${esc(name)} data stays saved but hidden while you're in the household. It comes back if you leave.</p>` : ""}
+      <button class="btn primary act-go" id="jn-go">Join household</button><button class="btn act-go" id="jn-no">Not now</button>`;
+    $("#jn-no").onclick = () => leaveTo("#/");
+    $("#jn-go").onclick = async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.classList.add("loading");
+      try {
+        if (me.household) await api("/api/budget/household/leave", { method: "POST" });
+        await api("/api/budget/household/join", { method: "POST", body: { token } });
+        await pb.collection("users").authRefresh();
+        clearPending();
+        $("#act-body").innerHTML = `${actSeal(true)}<h1 class="act-h">You're in</h1><p class="act-p">You now share ${from}'s budget.</p><button class="btn primary act-go" id="act-go">Open ${esc(name)}</button>`;
+        $("#act-go").onclick = () => leaveTo("#/");
+      } catch (err) { b.disabled = false; b.classList.remove("loading"); fail(err); }
+    };
+  }
+
   // ------------------------------------------------------------------ public homepage
   function renderPublic() {
     const h = location.hash.replace(/^#\/?/, "");
     if (h === "login" || h === "register") return renderAuth(h);
+    const jn = /^join\/([^/?#]+)/.exec(h);
+    if (jn) return renderJoin(decodeURIComponent(jn[1]));
     const act = /^(verify|reset|email-change)\/([^/?#]+)/.exec(h);
     if (act) return renderAction(act[1], decodeURIComponent(act[2]));
     if (h.startsWith("reset") || h.startsWith("verify") || h.startsWith("email-change")) return renderAuth("login");
@@ -432,6 +498,8 @@
     // a re-render removes whatever was hovered, so drop any open tooltip with it
     const tip = $("#viz-tip"); if (tip) tip.style.opacity = 0;
     if (reloadIfPending()) return; // a newer version is waiting: load it instead of rendering old code
+    const jn = /^#\/?join\/([^/?#]+)/.exec(location.hash);
+    if (jn) return renderJoin(decodeURIComponent(jn[1]));
     const act = /^#\/?(verify|reset|email-change)\/([^/?#]+)/.exec(location.hash);
     if (act) return renderAction(act[1], decodeURIComponent(act[2]));
     if (!pb.authStore.isValid) return renderPublic();
@@ -1289,7 +1357,7 @@
           const fd = Object.fromEntries(new FormData(form));
           const data = { name: fd.name.trim(), amount: Math.abs(Number(fd.amount) || 0), kind: fd.kind, frequency: fd.frequency, category: fd.category, next_date: fd.next_date ? fd.next_date + " 12:00:00.000Z" : "", ...extra };
           try {
-            if (isNew) await pb.collection("recurring").create({ ...data, user: pb.authStore.record.id, status: "active", merchant_key: it.merchant_key || "", account: it.account || "", last_date: it.last_date ? it.last_date + " 12:00:00.000Z" : "", last_amount: it.last_date ? it.amount : 0 });
+            if (isNew) await pb.collection("recurring").create({ ...data, user: dataUser(), status: "active", merchant_key: it.merchant_key || "", account: it.account || "", last_date: it.last_date ? it.last_date + " 12:00:00.000Z" : "", last_amount: it.last_date ? it.amount : 0 });
             else await pb.collection("recurring").update(it.id, data);
             close(); route();
           } catch (err) { fail(err); }
@@ -1378,7 +1446,7 @@
     $$("[data-ignore]", view).forEach((b) => (b.onclick = async () => {
       const g = s.suggestions[+b.dataset.ignore];
       try {
-        await pb.collection("recurring").create({ user: pb.authStore.record.id, name: g.name, merchant_key: g.merchant_key, amount: g.amount, kind: "subscription", frequency: g.frequency, status: "ignored" });
+        await pb.collection("recurring").create({ user: dataUser(), name: g.name, merchant_key: g.merchant_key, amount: g.amount, kind: "subscription", frequency: g.frequency, status: "ignored" });
         toast(`Won't suggest ${g.name} again`); route();
       } catch (err) { fail(err); }
     }));
@@ -1564,7 +1632,7 @@
           e.preventDefault();
           const fd = Object.fromEntries(new FormData(e.target));
           try {
-            await pb.collection("rules").create({ user: pb.authStore.record.id, pattern: fd.pattern.trim().toLowerCase(), category: fd.category });
+            await pb.collection("rules").create({ user: dataUser(), pattern: fd.pattern.trim().toLowerCase(), category: fd.category });
             if (fd.apply) { const r = await api("/api/budget/apply-rules", { method: "POST" }); toast(`Rule saved · ${plural(r.updated, "transaction")} categorized`); }
             else toast("Rule saved");
             close();
@@ -1607,7 +1675,7 @@
           if (!tx.split) data.category = fd.category;
           if (manual) Object.assign(data, { date: fd.date + " 12:00:00.000Z", amount: Number(fd.amount), description: fd.description });
           try {
-            if (isNew) await pb.collection("transactions").create({ ...data, user: pb.authStore.record.id, account: fd.account });
+            if (isNew) await pb.collection("transactions").create({ ...data, user: dataUser(), account: fd.account });
             else await pb.collection("transactions").update(tx.id, data);
             close(); toast("Changes saved");
             if (!isNew && fd.category && fd.category !== tx.category) offerRule(tx, fd.category);
@@ -1879,8 +1947,13 @@
   }
 
   async function saveMe(data) {
-    const saved = await pb.collection("users").update(pb.authStore.record.id, data);
-    pb.authStore.save(pb.authStore.token, saved);
+    const shared = {}, own = {};
+    for (const k in data) (SHARED_SETTINGS.includes(k) ? shared : own)[k] = data[k];
+    if (Object.keys(shared).length) await api("/api/budget/household/settings", { method: "POST", body: shared });
+    if (Object.keys(own).length) {
+      const saved = await pb.collection("users").update(pb.authStore.record.id, own);
+      pb.authStore.save(pb.authStore.token, saved);
+    }
   }
 
   function editIncome(d) {
@@ -2076,7 +2149,7 @@
           const fd = Object.fromEntries(new FormData(e.target));
           const data = { name: fd.name.trim(), kind: fd.kind, icon: fd.icon, budget: Number(fd.budget) || 0 };
           try {
-            if (isNew) await pb.collection("categories").create({ ...data, user: pb.authStore.record.id });
+            if (isNew) await pb.collection("categories").create({ ...data, user: dataUser() });
             else await pb.collection("categories").update(cat.id, data);
             close(); route();
           } catch (err) { fail(err); }
@@ -2248,7 +2321,7 @@
           e.preventDefault();
           const fd = Object.fromEntries(new FormData(e.target));
           try {
-            await pb.collection("accounts").create({ user: pb.authStore.record.id, name: fd.name, type: fd.type, balance: Number(fd.balance) || 0, on_budget: !!fd.on_budget, currency: "USD" });
+            await pb.collection("accounts").create({ user: dataUser(), name: fd.name, type: fd.type, balance: Number(fd.balance) || 0, on_budget: !!fd.on_budget, currency: "USD" });
             close(); route();
           } catch (err) { fail(err); }
         };
@@ -2521,8 +2594,7 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
-        const saved = await pb.collection("users").update(me.id, { cash_floor: Number(fd.get("floor")) || 0, cash_alerts: fd.has("alerts") });
-        pb.authStore.save(pb.authStore.token, saved);
+        await saveMe({ cash_floor: Number(fd.get("floor")) || 0, cash_alerts: fd.has("alerts") });
         toast("Warning saved"); route();
       } catch (err) { fail(err); }
     };
@@ -2754,7 +2826,7 @@
           // where it started, for "since you set this goal" (reset when what it tracks changes)
           if (isNew || (g.account || "") !== data.account) { data.start_day = ymd(new Date()); data.start_amount = a ? a.balance : data.saved; }
           try {
-            if (isNew) await pb.collection("goals").create({ ...data, user: pb.authStore.record.id });
+            if (isNew) await pb.collection("goals").create({ ...data, user: dataUser() });
             else await pb.collection("goals").update(g.id, data);
             close(); route();
           } catch (err) { fail(err); }
@@ -2767,11 +2839,14 @@
 
   // ------------------------------------------------------------------ settings
   async function renderSettings(view) {
-    const [me, rules] = await Promise.all([
+    const [me, rules, hh] = await Promise.all([
       pb.collection("users").getOne(pb.authStore.record.id),
       pb.collection("rules").getFullList({ sort: "pattern" }),
+      api("/api/budget/household").catch(() => null),
       loadCategories(),
     ]);
+    // the warning level is the household's
+    const floor = hh ? hh.settings.cash_floor : me.cash_floor;
     const theme = getTheme();
     const smtp = state.status.smtp;
     // a setting with its explanation on the left and a switch on the right
@@ -2797,7 +2872,7 @@
                 <label class="field"><span>Large transaction alert ($)</span><input name="large_txn_threshold" type="number" min="0" step="1" value="${me.large_txn_threshold || 0}"></label>
               </div>
               ${sw("alert_duplicates", me.alert_duplicates, "Possible double charges", "The same merchant and amount twice within two days")}
-              ${sw("cash_alerts", me.cash_alerts, "Low balance", `When checking is projected to drop below <a href="#/cashflow">your warning level</a>${me.cash_floor ? ` (${money(me.cash_floor)})` : ""}`)}
+              ${sw("cash_alerts", me.cash_alerts, "Low balance", `When checking is projected to drop below <a href="#/cashflow">your warning level</a>${floor ? ` (${money(floor)})` : ""}`)}
               ${sw("alert_paycheck", me.alert_paycheck, "Paycheck arrived", "When a regular deposit lands, with what's left to spend")}
               <div class="set-h">Bills and subscriptions</div>
               ${sw("bill_reminders", me.bill_reminders, "Bill reminders", "3 days before a bill or subscription is due")}
@@ -2836,16 +2911,17 @@
             <div class="card-h"><h2 id="set-el">More settings</h2></div>
             ${link("#/budget", "budget", "Categories and budgets", "Add, rename or archive categories; set monthly limits")}
             ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV")}
-            ${link("#/cashflow", "cashflow", "Low balance warning", me.cash_floor ? `Warns below ${money(me.cash_floor)}` : "Not set")}
+            ${link("#/cashflow", "cashflow", "Low balance warning", floor ? `Warns below ${money(floor)}` : "Not set")}
           </section>
+          ${hh ? householdCard(hh, me, smtp) : ""}
           <section class="card" aria-labelledby="set-da">
             <div class="card-h"><h2 id="set-da">Your data</h2></div>
             <div class="data-row">${icon("download")}<span class="grow"><b>Export transactions</b><span class="small muted">A spreadsheet file (CSV) for Excel, Numbers or Google Sheets. A split transaction gets one row per part.</span>
               <span class="row data-act"><select id="exp-range" aria-label="Which transactions"><option value="all">All time</option><option value="ytd">This year</option><option value="last">Last year</option><option value="12m">Last 12 months</option></select><button class="btn" id="exp-csv">Download CSV</button></span></span></div>
             <div class="data-row">${icon("archive")}<span class="grow"><b>Back up everything</b><span class="small muted">Accounts, transactions, budgets, goals, bills, rules and settings in one file. Bank logins aren't included, so keep the file private but know it can't reach your bank.</span>
               <span class="row data-act"><button class="btn" id="bk-dl">Download backup</button></span></span></div>
-            <div class="data-row">${icon("upload")}<span class="grow"><b>Restore a backup</b><span class="small muted">Replaces everything here with what's in a backup file. Moving to a new server? Restore, then reconnect your bank and its accounts pick up where they left off.</span>
-              <span class="row data-act"><button class="btn" id="bk-restore">Choose a backup file…</button><input type="file" id="bk-file" accept=".json,application/json" hidden></span></span></div>
+            ${hh && hh.role === "member" ? `<div class="data-row">${icon("upload")}<span class="grow"><b>Restore a backup</b><span class="small muted">Only ${esc(hh.owner.name || hh.owner.email)}, the household's owner, can restore a backup.</span></span></div>` : `<div class="data-row">${icon("upload")}<span class="grow"><b>Restore a backup</b><span class="small muted">Replaces everything here with what's in a backup file. Moving to a new server? Restore, then reconnect your bank and its accounts pick up where they left off.</span>
+              <span class="row data-act"><button class="btn" id="bk-restore">Choose a backup file…</button><input type="file" id="bk-file" accept=".json,application/json" hidden></span></span></div>`}
           </section>
           ${installCard()}
         </div>
@@ -2887,6 +2963,7 @@
     const rp = $("#reset-pw"); if (rp) rp.onclick = async () => { try { await pb.collection("users").requestPasswordReset(me.email); toast("Reset link sent"); } catch (err) { fail(err); } };
     const vf = $("#verify"); if (vf) vf.onclick = async () => { try { await pb.collection("users").requestVerification(me.email); toast("Verification email sent"); } catch (err) { fail(err); } };
     $("#add-rule").onclick = () => createRuleDialog("", "");
+    if (hh) bindHousehold(view, hh);
     $("#exp-csv").onclick = async (e) => {
       const btn = e.currentTarget, y = new Date().getFullYear(), q = {};
       const r = $("#exp-range").value;
@@ -2905,8 +2982,8 @@
       try { await download("/api/budget/backup", "keel-backup.json"); toast("Backup downloaded"); } catch (err) { fail(err); } finally { btn.classList.remove("loading"); }
     };
     const file = $("#bk-file");
-    $("#bk-restore").onclick = () => { file.value = ""; file.click(); };
-    file.onchange = async () => {
+    if (file) $("#bk-restore").onclick = () => { file.value = ""; file.click(); };
+    if (file) file.onchange = async () => {
       const f = file.files && file.files[0];
       if (!f) return;
       let data;
@@ -2919,6 +2996,62 @@
       if (!(await confirmBox(`Remove the rule for “${b.closest(".rule").querySelector(".code").textContent}”? Transactions it already filed keep their category.`, "Remove rule"))) return;
       try { await pb.collection("rules").delete(b.dataset.id); toast("Rule removed"); route(); } catch (err) { fail(err); }
     }));
+  }
+
+  // ------------------------------------------------------------------ household (Settings)
+  function householdCard(hh, me, smtp) {
+    const who = (p) => esc(p.name || p.email);
+    const personRow = (p, tag, btn) => `<div class="hh-row"><span class="av" aria-hidden="true">${esc(((p.name || p.email || "?").trim()[0] || "?").toUpperCase())}</span>
+      <span class="grow"><span class="hh-name"><b>${who(p)}</b>${tag ? `<span class="pill">${tag}</span>` : ""}</span><span class="small muted">${esc(p.email)}</span></span>${btn || ""}</div>`;
+    const inviteForm = smtp
+      ? `<form id="hh-invite" class="row hh-invite"><input name="email" type="email" required placeholder="Their email address" aria-label="Email address to invite" autocomplete="off"><button class="btn primary">Send invite</button></form>`
+      : `<p class="small muted" style="margin:0">Inviting someone needs email set up on this server (the <span class="code">SMTP_*</span> settings).</p>`;
+    const pending = hh.invites.length ? `<div class="hh-pending">${hh.invites.map((i) => `<div class="hh-row"><span class="av muted" aria-hidden="true">@</span><span class="grow"><b>${esc(i.email)}</b><span class="small muted">Invited · link expires ${esc(fullDate(i.expires))}</span></span><button type="button" class="btn sm hh-cancel" data-id="${i.id}">Cancel</button></div>`).join("")}</div>` : "";
+    let body;
+    if (hh.role === "member") {
+      body = `<p class="small muted" style="margin-top:0">You share ${who(hh.owner)}'s budget. Everything here is theirs and yours together; your alerts and theme are your own.</p>
+        ${personRow(hh.owner, "Owner")}
+        ${hh.members.map((m) => personRow(m, m.id === me.id ? "You" : "")).join("")}
+        <div class="row" style="margin-top:12px"><div class="spacer"></div><button type="button" class="btn danger" id="hh-leave">Leave household</button></div>`;
+    } else if (hh.role === "owner") {
+      body = `<p class="small muted" style="margin-top:0">Everyone here sees and edits the same accounts, transactions, budget, goals and bills. Each person keeps their own login, alerts and theme.</p>
+        ${personRow(hh.owner, "You · owner")}
+        ${hh.members.map((m) => personRow(m, "", `<button type="button" class="btn sm hh-remove" data-id="${m.id}" data-name="${who(m)}">Remove</button>`)).join("")}
+        ${pending}
+        <div class="hh-add"><b class="small">Invite someone else</b>${inviteForm}</div>`;
+    } else {
+      body = `<p class="small muted" style="margin-top:0">Share this budget with a partner or someone you live with. They get their own login and see the same accounts, transactions, budget, goals and bills. Each person keeps their own alerts and theme.</p>
+        ${pending}${inviteForm}`;
+    }
+    return `<section class="card" aria-labelledby="set-hh"><div class="card-h"><h2 id="set-hh">Household</h2></div>${body}</section>`;
+  }
+
+  function bindHousehold(view, hh) {
+    const inv = $("#hh-invite", view);
+    if (inv) inv.onsubmit = async (e) => {
+      e.preventDefault();
+      const b = $("button", inv); b.classList.add("loading"); b.disabled = true;
+      const email = new FormData(inv).get("email");
+      try { await api("/api/budget/household/invite", { method: "POST", body: { email } }); toast(`Invite sent to ${email}`); route(); }
+      catch (err) { fail(err); b.classList.remove("loading"); b.disabled = false; }
+    };
+    $$(".hh-cancel", view).forEach((b) => (b.onclick = async () => {
+      try { await api(`/api/budget/household/invite/${b.dataset.id}`, { method: "DELETE" }); toast("Invite cancelled"); route(); } catch (err) { fail(err); }
+    }));
+    $$(".hh-remove", view).forEach((b) => (b.onclick = async () => {
+      if (!(await confirmBox(`Remove ${b.dataset.name} from your household? They'll lose access to this budget right away. Nothing here is deleted.`, "Remove"))) return;
+      try { await api("/api/budget/household/remove", { method: "POST", body: { user: b.dataset.id } }); toast("Removed"); route(); } catch (err) { fail(err); }
+    }));
+    const lv = $("#hh-leave", view);
+    if (lv) lv.onclick = async () => {
+      if (!(await confirmBox(`Leave ${hh.owner.name || hh.owner.email}'s household? You'll go back to your own data. Their budget stays with them, and they can invite you again later.`, "Leave"))) return;
+      try {
+        await api("/api/budget/household/leave", { method: "POST" });
+        await pb.collection("users").authRefresh();
+        history.replaceState(null, "", "#/");
+        location.reload();
+      } catch (err) { fail(err); }
+    };
   }
 
   // Fetch a file from the API (with your sign-in) and hand it to the browser as a download.
@@ -3107,6 +3240,7 @@
   // ------------------------------------------------------------------ boot
   async function start() {
     if (/^#\/?(login|register)?$/.test(location.hash)) history.replaceState(null, "", "#/dashboard");
+    if (/^#\/?join\//.test(location.hash)) return route(); // the invite page draws its own card
     renderShell();
     await Promise.all([loadCategories(), loadAccounts()]).catch(() => {});
     route();

@@ -18,6 +18,7 @@
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
 - **Installable app** for phones and desktops: home-screen icon, full-screen window, opens offline.
 - **Calm, accessible design**: Keel Blue on cool neutrals, the Inter typeface, Lucide icons, a dark mode of its own, a phone layout with a bottom bar, and reduced-motion support.
+- **Shared household**: invite a partner by email to share one budget, each with their own login, alerts and theme.
 - **Export and backup**: download transactions as a CSV for any spreadsheet, or everything in one backup file you can restore on this server or a new one.
 - **Email over SMTP**: alerts when a budget passes your warning threshold or goes over it, large transactions, possible double charges, a subscription price going up, a yearly renewal a week out, and your paycheck arriving. Also a failed-sync notice, a weekly summary, a monthly report, and password reset and verification emails. Each one can be turned off in Settings.
 
@@ -89,6 +90,15 @@ New synced accounts start like this: checking and credit accounts count toward y
 ### CSV import
 
 Go to **Accounts → Import CSV**, pick the account, then map the date, description and amount columns. The amount can be a single column or separate debit and credit columns. Re-importing the same file skips rows that are already there.
+
+### Shared household
+
+**Settings → Household** lets you share one budget with a partner or anyone you live with. Type their email and send an invite; the link in it works for 7 days and only for that email address. They sign in (or create an account) and accept, and from then on you both see and edit the same accounts, transactions, budget, goals, bills, rules and settings.
+
+- Each person keeps their own login, email alerts, weekly summary, monthly report and theme. Alerts are about the shared data and go to whoever has them turned on.
+- The person who sent the invite is the household's owner. Only the owner can invite, remove someone or restore a backup.
+- Anyone can leave from the same card. Leaving gives you back the data you had before you joined, untouched; the household's data stays with the owner.
+- Invites are sent by email, so the server needs the `SMTP_*` settings.
 
 ### Export, backup and restore
 
@@ -192,3 +202,9 @@ pb_public/brand/ web-sized favicon, logo and wordmark
 | `POST /api/budget/recurring/detect` | Rescans transactions for recurring charges |
 | `GET /api/budget/networth?days=90` | Net worth now and over time |
 | `POST /api/budget/digest` | Emails you the weekly summary now |
+| `GET /api/budget/household` | Your household: role, owner, members, pending invites and shared settings |
+| `POST /api/budget/household/invite` | `{email}`: emails an invite (owner only) |
+| `POST /api/budget/household/join` | `{token}`: accepts an invite sent to your email |
+| `POST /api/budget/household/leave` | Leaves your household |
+| `POST /api/budget/household/remove` | `{user}`: removes a member (owner only) |
+| `POST /api/budget/household/settings` | `{budget_total, income_override, cash_floor}`: the household's shared settings |

@@ -52,7 +52,7 @@ function send(app, to, subject, html) {
 // Returns true if `key` had not been sent before (and records it).
 function claimKey(app, userId, key) {
   try {
-    app.findFirstRecordByFilter("alerts_sent", "key = {:k}", { k: key });
+    app.findFirstRecordByFilter("alerts_sent", "user = {:u} && key = {:k}", { u: userId, k: key });
     return false;
   } catch (_) {
     const r = new Record(app.findCollectionByNameOrId("alerts_sent"));
@@ -74,7 +74,7 @@ function checkBudgets(app, user) {
   if (!user.getBool("alerts_enabled") || !user.getString("email")) return 0;
   const insights = require(`${__hooks}/lib/insights.js`);
   const threshold = user.getInt("alert_threshold") || 90;
-  const data = insights.compute(app, user.id, util.currentMonth());
+  const data = insights.compute(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth());
   const hits = [];
   for (const c of data.categories) {
     if (c.kind === "income" || !(c.budget > 0) || c.pct == null) continue;
@@ -122,7 +122,7 @@ function billReminders(app, user, days) {
   days = days || 3;
   if (!user.getBool("bill_reminders") || !user.getString("email")) return 0;
   const recurring = require(`${__hooks}/lib/recurring.js`);
-  const data = recurring.list(app, user.id, util.currentMonth());
+  const data = recurring.list(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth());
   const due = data.upcoming.filter((u) => u.kind !== "income" && u.days_until >= 0 && u.days_until <= days)
     .filter((u) => claimKey(app, user.id, `bill:${u.id}:${u.date}`));
   if (!due.length) return 0;
@@ -137,9 +137,9 @@ function billReminders(app, user, days) {
 
 function digest(app, user) {
   const insights = require(`${__hooks}/lib/insights.js`);
-  const data = insights.compute(app, user.id, util.currentMonth());
+  const data = insights.compute(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth());
   const weekAgo = util.dateFromJs(new Date(Date.now() - 7 * 86400000));
-  const week = app.findRecordsByFilter("transactions", "user = {:u} && date >= {:d} && account.on_budget = true && exclude = false && amount < 0 &&(category = '' || category.kind != 'transfer')", "amount", 0, 0, { u: user.id, d: weekAgo });
+  const week = app.findRecordsByFilter("transactions", "user = {:u} && date >= {:d} && account.on_budget = true && exclude = false && amount < 0 &&(category = '' || category.kind != 'transfer')", "amount", 0, 0, { u: require(`${__hooks}/lib/household.js`).ownerId(user), d: weekAgo });
   const weekSpend = week.reduce((s, t) => s - t.getFloat("amount"), 0);
   const top = week.slice(0, 5).map((t) => row([util.esc(t.getString("payee") || t.getString("description")), util.money(t.getFloat("amount"))]));
 
@@ -149,7 +149,7 @@ function digest(app, user) {
 
   let bills = [];
   try {
-    bills = require(`${__hooks}/lib/recurring.js`).list(app, user.id, util.currentMonth()).upcoming
+    bills = require(`${__hooks}/lib/recurring.js`).list(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth()).upcoming
       .filter((u) => u.kind !== "income" && u.days_until >= 0 && u.days_until <= 7)
       .map((u) => row([util.esc(u.name), u.date.slice(5), util.money(u.amount)]));
   } catch (_) {}
