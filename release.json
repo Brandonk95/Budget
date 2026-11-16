@@ -1,5 +1,5 @@
 {
-  "version": "2.16.1",
+  "version": "2.16.2",
   "released": "2026-11-16",
-  "motd": "A fresh sign-in page: a split layout with a preview of your budget, a show-password button, a password strength meter, and clearer messages when something's wrong."
+  "motd": "The homepage got livelier: a colorful backdrop, a preview that draws itself in, a quick three-step tour, and sections that slide in as you scroll."
 }

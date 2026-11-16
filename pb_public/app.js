@@ -474,26 +474,36 @@
   function renderLanding() {
     const name = state.status.app_name || "Keel";
     document.title = `${name} · Money, on course.`;
-    const F = (ic, title, text) => `<div class="lp-f"><span class="cm" style="--c:var(--s1)" aria-hidden="true">${catSvg(ic)}</span><h3>${title}</h3><p>${text}</p></div>`;
+    let fi = 0;
+    const F = (ic, c, title, text) => `<div class="lp-f rv" style="--i:${fi++}"><span class="cm" style="--c:var(--${c})" aria-hidden="true">${catSvg(ic)}</span><h3>${title}</h3><p>${text}</p></div>`;
     // a small, static preview of the Overview so visitors see what they get
     const pts = [0, 18, 26, 61, 70, 92, 118, 126, 160, 171, 198, 214];
     const prev = [0, 30, 52, 70, 101, 128, 140, 171, 202, 220, 251, 280, 300, 322];
     const px = (i, n) => 8 + (i / (n - 1)) * 284, py = (v) => 112 - (v / 340) * 100;
     const line = (a, n) => a.map((v, i) => (i ? "L" : "M") + px(i, n).toFixed(1) + " " + py(v).toFixed(1)).join("");
     const curD = line(pts, 14);
-    const preview = `<div class="lp-shot" aria-hidden="true">
+    const ex = px(11, 14), ey = py(214);
+    const preview = `<div class="lp-stage" aria-hidden="true">
+      <div class="lp-shot">
       <div class="lp-shot-h"><div><div class="label">Spent this month</div><div class="lp-big num">$1,214.60</div><div class="small muted"><b class="pos">$182.40 less</b> than last month at this point</div></div></div>
       <svg viewBox="0 0 300 120" class="lp-chart"><line x1="8" x2="292" y1="${py(300)}" y2="${py(300)}" class="ref"/>
-        <path d="${line(prev, 14)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 5"/>
-        <path d="${curD}L${px(11, 14)} 112L8 112Z" fill="var(--s1)" opacity=".12"/>
-        <path d="${curD}" fill="none" stroke="var(--s1)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-        <circle cx="${px(11, 14)}" cy="${py(214)}" r="5" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/></svg>
+        <path class="lp-prev" d="${line(prev, 14)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="5 5"/>
+        <path class="lp-area" d="${curD}L${ex} 112L8 112Z" fill="var(--s1)" opacity=".12"/>
+        <path class="lp-line" pathLength="1" d="${curD}" fill="none" stroke="var(--s1)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle class="lp-ping" cx="${ex}" cy="${ey}" r="5" fill="var(--s1)"/>
+        <circle class="lp-dot" cx="${ex}" cy="${ey}" r="5" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/></svg>
       <div class="lp-rows">
-        ${[["Groceries", 412.18, 500], ["Dining Out", 168.4, 200], ["Transportation", 96.25, 180]].map(([n, v, b]) => `<div class="cat-row"><div>${catLabel({ name: n })}</div><div class="num">${money(v)} <span class="muted">/ ${money(b)}</span></div><div class="bar"><i style="width:${(v / b) * 100}%;background:${catColor({ name: n })}"></i></div></div>`).join("")}
+        ${[["Groceries", 412.18, 500], ["Dining Out", 168.4, 200], ["Transportation", 96.25, 180]].map(([n, v, b], i) => `<div class="cat-row"><div>${catLabel({ name: n })}</div><div class="num">${money(v)} <span class="muted">/ ${money(b)}</span></div><div class="bar"><i style="width:${(v / b) * 100}%;background:${catColor({ name: n })};--d:${0.9 + i * 0.12}s"></i></div></div>`).join("")}
       </div>
       <div class="lp-cf"><div><div class="label">Lowest balance, next 30 days</div><div class="num lp-cf-v">$842.10 <span class="small muted">on Nov 21, before payday</span></div></div><div class="spacer"></div>${sparkline([2400, 2210, 1980, 1620, 1290, 980, 842, 2650, 2480, 2300, 2120])}</div>
-      </div>`;
+      </div>
+      <div class="lp-chip lp-chip-a"><span class="lp-chip-ic" style="--c:var(--good)">${catSvg("trend")}</span><span><b>Paycheck arrived</b><span>+$2,450.00 · $1,862 left to spend</span></span></div>
+      <div class="lp-chip lp-chip-b"><span class="lp-chip-ic" style="--c:var(--s2)">${catSvg("repeat")}</span><span><b>Streaming due Friday</b><span>$15.49 · price went up $2</span></span></div>
+    </div>`;
+    const step = (n, title, text) => `<li class="lp-step rv" style="--i:${n - 1}"><span class="lp-num">${n}</span><h3>${title}</h3><p>${text}</p></li>`;
     $("#app").innerHTML = `
+      <div class="lp-page">
+      <div class="lp-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="lp">
         <header class="lp-nav">
           ${isKeel() ? `<span class="wordmark" role="img" aria-label="Keel"></span>` : `<div class="brand" style="padding:0"><div class="logo">${LOGO}</div>${esc(name)}</div>`}
@@ -503,28 +513,59 @@
         </header>
         <section class="lp-hero">
           <div class="lp-copy">
-            <p class="lp-eyebrow">Personal budgeting, self-hosted</p>
-            <h1>Money, on course.</h1>
+            <p class="lp-eyebrow"><span class="lp-dotlive" aria-hidden="true"></span>Personal budgeting, self-hosted</p>
+            <h1>Money, <span class="lp-hl">on course.<svg class="lp-swoosh" viewBox="0 0 300 24" preserveAspectRatio="none" aria-hidden="true"><path pathLength="1" d="M4 16C70 6 150 4 296 14"/></svg></span></h1>
             <p class="lp-lede">${esc(name)} pulls in your bank transactions, files them for you, and shows what's left to spend this month, so you always know where you stand.</p>
-            <div class="row lp-cta"><a class="btn primary lg" href="#/register">Create your account</a><a class="btn lg" href="#/login">Sign in</a></div>
-            <p class="small muted">Free and private. Your data stays on this server.</p>
+            <div class="row lp-cta"><a class="btn primary lg lp-go" href="#/register">Create your account <span aria-hidden="true" class="lp-arrow">→</span></a><a class="btn lg" href="#/login">Sign in</a></div>
+            <p class="small muted lp-note">Free and private. Your data stays on this server.</p>
           </div>
           ${preview}
         </section>
-        <section class="lp-grid">
-          ${F("swap", "Your banks, synced", "Connect through SimpleFIN to pull balances and transactions every day, or import a CSV.")}
-          ${F("tag", "Categories that learn", "Common merchants are filed automatically. Fix one and Keel remembers it next time.")}
-          ${F("target", "One budget number", "Pick a monthly total and watch the categories you care about. Everything else shares the rest.")}
-          ${F("repeat", "Bills & subscriptions", "Recurring charges and paychecks are found for you, with what's still due this month.")}
-          ${F("trend", "Net worth over time", "Assets and debts in one place, recorded daily so you can see the trend.")}
-          ${F("shield", "Private by design", "Self-hosted on your own server. No ads, no selling your data, no third-party trackers.")}
+        <section class="lp-how">
+          <h2 class="lp-h2 rv">Up and running in three steps</h2>
+          <ol class="lp-steps">
+            ${step(1, "Connect your bank", "Link it through SimpleFIN or import a CSV. Transactions arrive and get filed for you.")}
+            ${step(2, "Pick one number", "Decide what this month should cost. Keep an eye on just the categories you care about.")}
+            ${step(3, "Get a heads-up", "Hear about it before you go over, before a bill is due, or before checking runs low.")}
+          </ol>
         </section>
-        <section class="lp-band">
-          <h2>Know what's left before you spend it.</h2>
-          <a class="btn primary lg" href="#/register">Get started</a>
+        <section class="lp-grid">
+          ${F("swap", "s1", "Your banks, synced", "Connect through SimpleFIN to pull balances and transactions every day, or import a CSV.")}
+          ${F("tag", "s2", "Categories that learn", "Common merchants are filed automatically. Fix one and Keel remembers it next time.")}
+          ${F("target", "s3", "One budget number", "Pick a monthly total and watch the categories you care about. Everything else shares the rest.")}
+          ${F("repeat", "s7", "Bills & subscriptions", "Recurring charges and paychecks are found for you, with what's still due this month.")}
+          ${F("trend", "s5", "Net worth over time", "Assets and debts in one place, recorded daily so you can see the trend.")}
+          ${F("shield", "s4", "Private by design", "Self-hosted on your own server. No ads, no selling your data, no third-party trackers.")}
+        </section>
+        <section class="lp-band rv">
+          <div class="lp-band-copy"><h2>Know what's left before you spend it.</h2><p>Set up takes a couple of minutes. Bring your partner along whenever you're ready.</p></div>
+          <a class="btn lg lp-band-go" href="#/register">Get started <span aria-hidden="true" class="lp-arrow">→</span></a>
+          <svg class="lp-band-waves" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true"><path d="M0 60c120 30 240 30 360 0s240-30 360 0 240 30 360 0 240-30 360 0v60H0z"/><path d="M0 80c120-24 240-24 360 0s240 24 360 0 240-24 360 0 240 24 360 0v40H0z"/></svg>
         </section>
         <footer class="lp-foot small muted">${esc(name)} v${esc(state.status.version || "")} · <a href="#/login">Sign in</a></footer>
+      </div>
       </div>`;
+    const root = $(".lp-page");
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const onScroll = () => { if (!root.isConnected) return removeEventListener("scroll", onScroll); root.classList.toggle("scrolled", scrollY > 8); };
+    addEventListener("scroll", onScroll, { passive: true });
+    countUp(root, ".lp-big, .lp-cf-v");
+    // reveal sections as they scroll into view
+    if (!still && "IntersectionObserver" in window) {
+      root.classList.add("rv-on");
+      const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { threshold: 0.15, rootMargin: "0px 0px -40px 0px" });
+      $$(".rv", root).forEach((el) => io.observe(el));
+    }
+    // the preview tilts a little toward the pointer
+    const stage = $(".lp-stage", root);
+    if (!still && matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      stage.onpointermove = (e) => {
+        const r = stage.getBoundingClientRect();
+        stage.style.setProperty("--ry", (((e.clientX - r.left) / r.width - 0.5) * 6).toFixed(2) + "deg");
+        stage.style.setProperty("--rx", (-((e.clientY - r.top) / r.height - 0.5) * 6).toFixed(2) + "deg");
+      };
+      stage.onpointerleave = () => { stage.style.setProperty("--rx", "0deg"); stage.style.setProperty("--ry", "0deg"); };
+    }
   }
 
   // ------------------------------------------------------------------ shell / router
@@ -631,9 +672,9 @@
   // Headline amounts tick up from zero. Only the leading "$1,234.56" text is animated; the final
   // text is exactly what was rendered, so nothing changes once it lands.
   const COUNT_SEL = ".ov-big, .kpi-v, .big.num, .g-big, .d-big";
-  function countUp(root) {
+  function countUp(root, sel = COUNT_SEL) {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    $$(COUNT_SEL, root).forEach((el) => {
+    $$(sel, root).forEach((el) => {
       const node = [...el.childNodes].find((n) => n.nodeType === 3 && /\$[\d,]+/.test(n.nodeValue));
       if (!node) return;
       const orig = node.nodeValue;
