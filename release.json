@@ -1,5 +1,5 @@
 {
-  "version": "2.16.0",
+  "version": "2.16.1",
   "released": "2026-11-16",
-  "motd": "Shared household: in Settings, invite your partner by email to share this budget. You each get your own login, alerts and theme, and see the same accounts, transactions, budget, goals and bills."
+  "motd": "A fresh sign-in page: a split layout with a preview of your budget, a show-password button, a password strength meter, and clearer messages when something's wrong."
 }

@@ -144,38 +144,131 @@
     state.accounts.map((a) => `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.name)}${a.institution ? " · " + esc(a.institution) : ""}</option>`).join("");
 
   // ------------------------------------------------------------------ auth
+  const AUTH_IC = {
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff: '<path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-2.7 3.6M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+  };
+  const authIc = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${AUTH_IC[k]}</svg>`;
+  // 0-4: length plus a mix of letters, numbers and symbols
+  function pwScore(pw) {
+    if (!pw) return 0;
+    let n = pw.length >= 8 ? 1 : 0;
+    if (pw.length >= 12) n++;
+    const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
+    if (kinds >= 2) n++;
+    if (kinds >= 3 && pw.length >= 10) n++;
+    return pw.length < 8 ? Math.min(n, 1) : n;
+  }
+  const PW_WORDS = ["Too short", "Weak", "Okay", "Good", "Strong"];
+
   function renderAuth(mode = "login", email = "") {
-    document.title = state.status.app_name;
+    const name = state.status.app_name || "Keel";
+    const keel = isKeel();
+    document.title = mode === "register" ? `Create account · ${name}` : `Sign in · ${name}`;
+    const heads = {
+      login: ["Welcome back", `Sign in to see where your money stands.`],
+      register: ["Create your account", "Set up a budget in a couple of minutes. It's yours, on your own server."],
+      forgot: ["Reset your password", "Enter your email and we'll send you a link to choose a new one."],
+    };
+    const [h1, sub] = heads[mode];
+    const field = (label, ic, input, extra = "") => `<label class="field si-field"><span>${label}</span><span class="si-input">${authIc(ic)}${input}${extra}</span></label>`;
     $("#app").innerHTML = `
-      <div class="auth"><div class="card">
-        ${isKeel() ? `<img class="auth-logo" src="brand/logo.png" alt="Keel" width="760" height="431">` : `<div class="brand" style="padding:0 0 6px"><div class="logo">${LOGO}</div>${esc(state.status.app_name)}</div>`}
-        <p class="tagline">Money, on course.</p>
-        ${isKeel() ? `<a class="auth-home small" href="#/">← Back to home</a>` : ""}
-        <div class="tabs">
-          <button data-m="login" class="${mode === "login" ? "on" : ""}">Sign in</button>
-          <button data-m="register" class="${mode === "register" ? "on" : ""}">Create account</button>
-        </div>
-        <form id="auth-form" class="stack">
-          ${mode === "register" ? `<label class="field"><span>Name</span><input name="name" autocomplete="name"></label>` : ""}
-          <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email" value="${esc(email)}"></label>
-          ${mode !== "forgot" ? `<label class="field"><span>Password</span><input name="password" type="password" required minlength="8" autocomplete="${mode === "register" ? "new-password" : "current-password"}"></label>` : ""}
-          <button class="btn primary" style="width:100%;justify-content:center">${mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Send reset link"}</button>
-          ${mode === "login" && state.status.smtp ? `<p class="small" style="text-align:center"><a href="#" id="forgot">Forgot password?</a></p>` : ""}
-          ${mode === "forgot" ? `<p class="small" style="text-align:center"><a href="#" id="back">Back to sign in</a></p>` : ""}
-        </form>
-      </div></div>`;
-    $$(".tabs button").forEach((b) => (b.onclick = () => { history.replaceState(null, "", b.dataset.m === "register" ? "#/register" : "#/login"); renderAuth(b.dataset.m); }));
-    const f = $("#forgot"); if (f) f.onclick = (e) => { e.preventDefault(); renderAuth("forgot"); };
-    const bk = $("#back"); if (bk) bk.onclick = (e) => { e.preventDefault(); renderAuth("login"); };
+      <div class="signin">
+        <aside class="si-panel" aria-hidden="true">
+          ${keel ? `<span class="wordmark si-mark"></span>` : `<div class="brand si-brand"><div class="logo">${LOGO}</div>${esc(name)}</div>`}
+          <div class="si-pitch">
+            <h2 class="si-h">Money, <br>on course.</h2>
+            <p class="si-lede">Every account in one place, a budget that keeps up, and a heads-up before a bill or a low balance catches you out.</p>
+            <div class="si-card">
+              <div class="si-card-top"><span>Left to spend</span><span class="si-pill">On track</span></div>
+              <div class="si-big">$1,284.50</div>
+              <div class="si-track"><i style="--w:62%"></i></div>
+              <div class="si-cats">
+                <div><span>Groceries</span><span class="si-mini"><i style="--w:72%;--d:.15s"></i></span><b>$412</b></div>
+                <div><span>Dining out</span><span class="si-mini"><i style="--w:45%;--d:.25s"></i></span><b>$186</b></div>
+                <div><span>Transport</span><span class="si-mini"><i style="--w:30%;--d:.35s"></i></span><b>$98</b></div>
+              </div>
+            </div>
+            <ul class="si-points">
+              <li>${authIcCheck()}Syncs with your bank, or import a CSV</li>
+              <li>${authIcCheck()}Alerts before you overspend</li>
+              <li>${authIcCheck()}Share it with your household</li>
+            </ul>
+          </div>
+          <svg class="si-waves" viewBox="0 0 1440 120" preserveAspectRatio="none"><path class="w1" d="M0 60c120 30 240 30 360 0s240-30 360 0 240 30 360 0 240-30 360 0v60H0z"/><path class="w2" d="M0 80c120-24 240-24 360 0s240 24 360 0 240-24 360 0 240 24 360 0v40H0z"/></svg>
+        </aside>
+        <main class="si-main">
+          <div class="si-top">${keel ? `<a class="si-back small" href="#/">← Back to home</a>` : ""}</div>
+          <div class="si-form">
+            <h1 class="si-title">${h1}</h1>
+            <p class="si-sub">${sub}</p>
+            ${mode !== "forgot" ? `<div class="tabs si-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected="${mode === "login"}" data-m="login" class="${mode === "login" ? "on" : ""}">Sign in</button>
+              <button type="button" role="tab" aria-selected="${mode === "register"}" data-m="register" class="${mode === "register" ? "on" : ""}">Create account</button>
+              <span class="si-tab-glide" style="--x:${mode === "register" ? 1 : 0}"></span>
+            </div>` : ""}
+            <form id="auth-form" class="stack" novalidate>
+              ${mode === "register" ? field("Name", "user", `<input name="name" autocomplete="name" placeholder="What should we call you?">`) : ""}
+              ${field("Email", "mail", `<input name="email" type="email" required autocomplete="email" placeholder="you@example.com" value="${esc(email)}">`)}
+              ${mode !== "forgot" ? field(
+                `Password${mode === "login" && state.status.smtp ? `<a href="#" id="forgot" class="si-forgot">Forgot?</a>` : ""}`, "lock",
+                `<input name="password" type="password" required minlength="8" autocomplete="${mode === "register" ? "new-password" : "current-password"}" placeholder="${mode === "register" ? "At least 8 characters" : "Your password"}">`,
+                `<button type="button" class="si-eye" aria-label="Show password" aria-pressed="false">${authIc("eye")}</button>`) : ""}
+              ${mode === "register" ? `<div class="si-meter" data-s="0" aria-live="polite"><span><i></i><i></i><i></i><i></i></span><em>Use at least 8 characters</em></div>` : ""}
+              <p class="si-err" role="alert" hidden></p>
+              <button class="btn primary si-go">${mode === "login" ? "Sign in" : mode === "register" ? "Create account" : "Send reset link"}</button>
+              ${mode === "forgot" ? `<p class="small si-alt"><a href="#" id="back">← Back to sign in</a></p>` : ""}
+            </form>
+          </div>
+          <p class="si-foot small">${mode === "register" ? "Your data stays on this server. No ads, no selling, ever." : `${esc(name)} · Money, on course.`}</p>
+        </main>
+      </div>`;
+    const swap = (m) => { history.replaceState(null, "", m === "register" ? "#/register" : "#/login"); const em = $("#auth-form input[name=email]"); renderAuth(m, em ? em.value : ""); };
+    $$(".si-tabs button").forEach((b) => (b.onclick = () => { if (b.dataset.m !== mode) swap(b.dataset.m); }));
+    const f = $("#forgot"); if (f) f.onclick = (e) => { e.preventDefault(); renderAuth("forgot", $("#auth-form input[name=email]").value); };
+    const bk = $("#back"); if (bk) bk.onclick = (e) => { e.preventDefault(); renderAuth("login", $("#auth-form input[name=email]").value); };
+    const pw = $("#auth-form input[name=password]");
+    const eye = $(".si-eye");
+    if (eye) eye.onclick = () => {
+      const show = pw.type === "password";
+      pw.type = show ? "text" : "password";
+      eye.innerHTML = authIc(show ? "eyeOff" : "eye");
+      eye.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      eye.setAttribute("aria-pressed", String(show));
+      pw.focus();
+    };
+    const meter = $(".si-meter");
+    if (meter) pw.oninput = () => {
+      const n = pwScore(pw.value);
+      meter.dataset.s = pw.value ? String(n) : "0";
+      meter.dataset.on = pw.value ? "1" : "";
+      $("em", meter).textContent = pw.value ? (pw.value.length < 8 ? `${8 - pw.value.length} more character${8 - pw.value.length === 1 ? "" : "s"}` : PW_WORDS[n]) : "Use at least 8 characters";
+    };
+    const errBox = $(".si-err");
+    const showErr = (msg) => { errBox.textContent = msg; errBox.hidden = false; errBox.classList.remove("shake"); void errBox.offsetWidth; errBox.classList.add("shake"); };
+    $$("#auth-form input").forEach((i) => i.addEventListener("input", () => { errBox.hidden = true; i.removeAttribute("aria-invalid"); }));
+    // focus the first empty field on a big screen (on a phone it would pop the keyboard over the page)
+    if (matchMedia("(min-width: 900px)").matches) { const first = $$("#auth-form input").find((i) => !i.value); if (first) first.focus(); }
     $("#auth-form").onsubmit = async (e) => {
       e.preventDefault();
-      const fd = Object.fromEntries(new FormData(e.target));
-      const btn = $("button.primary", e.target); btn.disabled = true; btn.classList.add("loading");
+      const form = e.target;
+      const bad = [...form.querySelectorAll("input")].find((i) => !i.checkValidity());
+      if (bad) {
+        bad.setAttribute("aria-invalid", "true"); bad.focus();
+        const label = bad.name === "email" ? "Enter a valid email address." : bad.name === "password" ? (bad.value ? "Passwords need at least 8 characters." : "Enter your password.") : "Fill in this field.";
+        showErr(label); return;
+      }
+      const fd = Object.fromEntries(new FormData(form));
+      const btn = $("button.primary", form); btn.disabled = true; btn.classList.add("loading");
       try {
         if (mode === "forgot") {
           await pb.collection("users").requestPasswordReset(fd.email);
           toast("If that email exists, a reset link is on its way.");
-          renderAuth("login");
+          renderAuth("login", fd.email);
           return;
         }
         if (mode === "register") {
@@ -186,9 +279,17 @@
         let pending = ""; try { pending = sessionStorage.getItem("keel_join") || ""; } catch (_) {}
         if (pending) { history.replaceState(null, "", "#/join/" + pending); await start(); return; }
         await start();
-      } catch (err) { fail(err); btn.disabled = false; btn.classList.remove("loading"); }
+      } catch (err) {
+        btn.disabled = false; btn.classList.remove("loading");
+        const st = err && err.status;
+        let msg = errText(err);
+        if (mode === "login" && st === 400) msg = "That email and password don't match. Check them and try again.";
+        if (mode === "register" && err && err.response && err.response.data && err.response.data.email) msg = "An account with that email already exists. Try signing in instead.";
+        showErr(msg);
+      }
     };
   }
+  const authIcCheck = () => `<span class="si-tick">${authIc("check")}</span>`;
 
   // ------------------------------------------------------------------ email links
   // Pages the account emails link to: confirm email, choose a new password, confirm a new email.
