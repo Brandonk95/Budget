@@ -192,7 +192,8 @@ b, strong { font-weight: 600; }
 .side .nav { flex: none; }
 .side .foot .ver { margin-top: 2px; line-height: 1.4; }
 .side .foot .who { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-main { padding: 32px 32px 96px; max-width: 1200px; width: 100%; min-width: 0; }
+/* the page column is capped for readability and centered in the space beside the sidebar */
+main { padding: 32px 32px 96px; max-width: 1320px; width: 100%; min-width: 0; margin-inline: auto; }
 .topbar { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; min-height: 40px; }
 
 .month-picker { display: inline-flex; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); height: 40px; }

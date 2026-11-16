@@ -1,5 +1,5 @@
 {
-  "version": "2.15.0",
+  "version": "2.15.1",
   "released": "2026-11-16",
-  "motd": "New in Settings, under Your data: export your transactions as a spreadsheet file (CSV), download a backup of everything in Keel, and restore from a backup on this server or a new one."
+  "motd": "On wide screens the page now sits centered beside the sidebar, a little wider than before, instead of leaving a big empty space on the right."
 }
