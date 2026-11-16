@@ -970,6 +970,7 @@
   // ------------------------------------------------------------------ dashboard
   // Answers three things first: how am I doing (Left to spend + status), what needs me (attention list),
   // what's coming (upcoming bills). Everything else supports those.
+  const ATT_ICON = { cashflow: "cashflow", recurring: "recurring", budget: "budget", transactions: "transactions", goals: "goals" };
   async function renderDashboard(view) {
     const b = monthBounds(state.month);
     const [d, rec, nw, recent, goals, cf] = await Promise.all([
@@ -1050,10 +1051,36 @@
     const topMax = Math.max(1, ...spendCats.map((c) => Math.max(c.spent, c.budget)));
     const nwPct = nw.net - nw.change !== 0 ? (nw.change / Math.abs(nw.net - nw.change)) * 100 : 0;
 
+    // ---- hello, and the month as a strip of days with bills and paydays on it
+    const me = pb.authStore.record || {};
+    const first = ((me.name || "").trim().split(/\s+/)[0]) || "";
+    const hr = new Date().getHours();
+    const hello = `${hr < 5 ? "Good evening" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening"}${first ? `, ${esc(first)}` : ""}`;
+    const marks = {};
+    if (d.is_current && today) for (const u of rec.upcoming) {
+      const day = today + u.days_until;
+      if (u.days_until < 0 || day > dim) continue;
+      (marks[day] = marks[day] || []).push(u);
+    }
+    const strip = d.is_current && today ? `<div class="ov-days" role="img" aria-label="Day ${today} of ${dim}">${Array.from({ length: dim }, (_, i) => {
+      const day = i + 1, m = marks[day] || [];
+      const pay = m.some((u) => u.kind === "income"), bill = m.some((u) => u.kind !== "income");
+      const cls = [day < today ? "past" : day === today ? "now" : "", pay ? "pay" : bill ? "bill" : ""].filter(Boolean).join(" ");
+      const tip = m.length ? `<b>${esc(dayLabel(state.month, day))}</b><br>${m.map((u) => `${esc(u.name)}: ${u.kind === "income" ? "+" : ""}${esc(money(u.amount))}`).join("<br>")}` : day === today ? `<b>Today</b>` : "";
+      return `<i class="${cls}" style="--i:${i}" ${tip ? tipAttr(tip) : ""}></i>`;
+    }).join("")}</div>` : "";
+    const helloRow = d.is_current ? `<div class="ov-hello">
+        <div><h2>${hello}</h2><p class="muted small">${esc(new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }))} · day ${today} of ${dim}${marks && Object.keys(marks).length ? ` · <span class="ov-key"><i class="bill"></i>bills <i class="pay"></i>paydays</span>` : ""}</p></div>
+        ${strip}
+      </div>` : "";
+    const tone = !hasBudget ? "tone-none" : status ? `tone-${status[0]}` : "tone-none";
+    const ringPct = hasBudget ? Math.min(100, Math.max(0, (d.spent / d.budgeted) * 100)) : 0;
+    const ring = hasBudget ? `<div class="ov-ring" aria-hidden="true"><svg viewBox="0 0 72 72" class="ring"><circle cx="36" cy="36" r="30"/><circle cx="36" cy="36" r="30" stroke-dasharray="${(ringPct * 1.885).toFixed(1)} 188.5"/></svg><span><b>${Math.round((d.spent / d.budgeted) * 100)}%</b>used</span></div>` : "";
     const hero = hasBudget ? `
-      <section class="card ov-hero" aria-labelledby="ov-left">
-        <div class="row"><h2 id="ov-left" class="label">Left to spend${d.is_current ? "" : ` in ${esc(monthLabel(state.month))}`}</h2><div class="spacer"></div>${status ? `<span class="pill ${status[0] === "good" ? "ok" : status[0] === "bad" ? "err" : "warn-p"}">${status[1]}</span>` : ""}</div>
-        <div class="ov-big num ${left < 0 ? "negc" : ""}">${left < 0 ? "−" : ""}${money(Math.abs(left))}</div>
+      <section class="card ov-hero ${tone}" aria-labelledby="ov-left">
+        <svg class="ov-waves" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true"><path d="M0 60c120 30 240 30 360 0s240-30 360 0 240 30 360 0 240-30 360 0v60H0z"/><path d="M0 80c120-24 240-24 360 0s240 24 360 0 240-24 360 0 240 24 360 0v40H0z"/></svg>
+        <div class="row"><h2 id="ov-left" class="label">Left to spend${d.is_current ? "" : ` in ${esc(monthLabel(state.month))}`}</h2><div class="spacer"></div>${status ? `<span class="pill ov-pill">${status[1]}</span>` : ""}</div>
+        <div class="ov-headline"><div class="ov-big num">${left < 0 ? "−" : ""}${money(Math.abs(left))}</div>${ring}</div>
         ${status ? `<p class="ov-status">${status[2]}</p>` : ""}
         <div class="bar ov-bar ${barClass(Math.round((d.spent / d.budgeted) * 100))}" role="progressbar" aria-label="Budget used" aria-valuenow="${Math.round(usedPct)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${usedPct}%"></i>${expectNow != null ? `<b style="left:${expectNow}%" ${tipAttr(`Where you'd be today on pace: <b>${esc(money(d.budgeted * expectNow / 100))}</b>`)}></b>` : ""}</div>
         <div class="ov-facts">
@@ -1063,20 +1090,21 @@
         </div>
         <a class="ov-more" href="#/budget">Open budget <span aria-hidden="true">→</span></a>
       </section>` : `
-      <section class="card ov-hero">
+      <section class="card ov-hero tone-none">
+        <svg class="ov-waves" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true"><path d="M0 60c120 30 240 30 360 0s240-30 360 0 240 30 360 0 240-30 360 0v60H0z"/><path d="M0 80c120-24 240-24 360 0s240 24 360 0 240-24 360 0 240 24 360 0v40H0z"/></svg>
         <h2 class="label">Spent ${d.is_current ? "this month" : "in " + esc(monthLabel(state.month))}</h2>
         <div class="ov-big num">${money(d.spent)}</div>
         <p class="ov-status">${compare}. Set one monthly spending number and Keel shows what's left, what's safe per day and whether you're on track.</p>
-        <a class="btn primary" href="#/budget">Create a budget</a>
+        <a class="btn ov-cta" href="#/budget">Create a budget</a>
       </section>`;
 
     view.innerHTML = `
-      <div class="stack">${installBanner()}
+      <div class="stack">${installBanner()}${helloRow}
         <div class="grid ov-top">
           ${hero}
           <section class="card" aria-labelledby="ov-att">
             <div class="card-h"><h2 id="ov-att">Needs attention</h2>${attention.length ? `<span class="pill">${attention.length}</span>` : ""}</div>
-            ${attention.length ? `<ul class="att">${attention.map(([lv, text, href, label]) => `<li class="${lv}"><span class="grow">${esc(text)}</span><a class="btn sm" href="${href}">${label}</a></li>`).join("")}</ul>`
+            ${attention.length ? `<ul class="att">${attention.map(([lv, text, href, label]) => `<li class="${lv}"><span class="att-ic" aria-hidden="true">${icon(ATT_ICON[href.split("?")[0].replace("#/", "")] || "budget")}</span><span class="grow">${esc(text)}</span><a class="btn sm" href="${href}">${label}</a></li>`).join("")}</ul>`
               : `<div class="att-ok"><span class="act-seal ok sm" aria-hidden="true"><svg viewBox="0 0 52 52"><path class="act-tick" d="M16 27l7 7 14-15"/></svg></span><div><b>You're all caught up</b><div class="small muted">No bills due in the next few days, nothing over budget, nothing to categorize.</div></div></div>`}
             ${tips.length ? `<div class="kind-h">Insights</div><ul class="tips">${tips.map((t) => `<li class="${t.level}">${esc(t.text)}</li>`).join("")}</ul>` : ""}
           </section>
@@ -1102,20 +1130,20 @@
           </section>
           <div class="stack">
             ${cf && !cf.empty ? `<a class="card" href="#/cashflow" aria-label="Cash flow forecast">
-              <div class="card-h"><h2>Cash flow</h2><div class="spacer"></div><span class="small link-t">Forecast →</span></div>
+              <div class="card-h"><h2 class="ic-h"><span class="kpi-ic" style="--c:var(--s3)" aria-hidden="true">${icon("cashflow")}</span>Cash flow</h2><div class="spacer"></div><span class="small link-t">Forecast →</span></div>
               <div class="row" style="align-items:flex-end;flex-wrap:nowrap"><div><div class="label">Lowest in the next 30 days</div><div class="kpi-v num ${cf.below_floor_day || cf.low.balance < 0 ? "negc" : ""}">${money(cf.low.balance)}</div>
                 <div class="small muted">${cf.low.day === cf.today ? "Today" : esc(prettyDate(cf.low.day))}${cf.next_income ? ` · next deposit ${esc(prettyDate(cf.next_income.day))}` : ""}</div></div>
                 <div class="spacer"></div>${sparkline(cf.points.filter((p, i) => i % 2 === 0).map((p) => p.balance))}</div>
             </a>` : ""}
             <a class="card" href="#/networth" aria-label="Net worth">
-              <div class="card-h"><h2>Net worth</h2><div class="spacer"></div><span class="small link-t">Details →</span></div>
+              <div class="card-h"><h2 class="ic-h"><span class="kpi-ic" style="--c:var(--s7)" aria-hidden="true">${icon("networth")}</span>Net worth</h2><div class="spacer"></div><span class="small link-t">Details →</span></div>
               <div class="kpi-v num">${money(nw.net)}</div>
-              <div class="small muted">${nw.change === 0 ? "No change" : `${signed(nw.change)} (${nwPct >= 0 ? "+" : "−"}${Math.abs(nwPct).toFixed(1)}%)`} in the last 30 days</div>
+              <div class="small muted">${nw.change === 0 ? "No change" : `<span class="trend ${nw.change > 0 ? "up" : "down"}"><span aria-hidden="true">${nw.change > 0 ? "▲" : "▼"}</span> ${signed(nw.change)} (${nwPct >= 0 ? "+" : "−"}${Math.abs(nwPct).toFixed(1)}%)</span>`} in the last 30 days</div>
             </a>
             <section class="card" aria-labelledby="ov-cat">
-              <div class="card-h"><h2 id="ov-cat">Top categories</h2><div class="spacer"></div><a href="#/spending" class="small">Spending →</a></div>
+              <div class="card-h"><h2 id="ov-cat" class="ic-h"><span class="kpi-ic" style="--c:var(--s2)" aria-hidden="true">${icon("spending")}</span>Top categories</h2><div class="spacer"></div><a href="#/spending" class="small">Spending →</a></div>
               ${spendCats.length ? spendCats.map((c) => `<div class="cat-row"><div>${catLabel(c)}</div><div class="num">${money(c.spent)}${c.budget ? ` <span class="muted">/ ${money(c.budget)}</span>` : ""}</div>
-                <div class="bar ${c.budget ? barClass(c.pct) : ""}"><i style="width:${(c.spent / topMax) * 100}%"></i></div></div>`).join("") : `<div class="muted small">No spending yet this month.</div>`}
+                <div class="bar ${c.budget ? barClass(c.pct) : ""}"><i style="width:${(c.spent / topMax) * 100}%;${c.budget && barClass(c.pct) ? "" : `background:${catColor(c)}`}"></i></div></div>`).join("") : `<div class="muted small">No spending yet this month.</div>`}
             </section>
           </div>
         </div>
