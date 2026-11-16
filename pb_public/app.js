@@ -101,8 +101,16 @@
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+    palette: '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2a10 10 0 0 0 0 20c.93 0 1.5-.75 1.5-1.5 0-.4-.15-.74-.4-1-.25-.26-.4-.6-.4-1 0-.83.67-1.5 1.5-1.5H16a6 6 0 0 0 6-6c0-4.97-4.48-9-10-9z"/>',
+    calendar: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    sparkle: '<path d="M12 3l1.9 5.8L20 10.7l-5.8 1.9L12 18.5l-1.9-5.9L4 10.7l6.1-1.9z"/>',
     right: '<path d="m9 18 6-6-6-6"/>',
   };
+  // a small colored badge: an app icon or a category icon, tinted with a palette color
+  const hIc = (name, c) => `<span class="kpi-ic" style="--c:var(--${c})" aria-hidden="true">${ICONS[name] ? icon(name) : catSvg(name)}</span>`;
   const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
 
   // a simple keel/hull mark
@@ -788,7 +796,8 @@
       const pts = s.values.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
       if (!pts.length) return;
       const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
-      if (s.area) paths += `<path class="ar" d="${d}L${pts[pts.length - 1][0].toFixed(1)} ${y(Math.max(sc.min, 0))}L${pts[0][0].toFixed(1)} ${y(Math.max(sc.min, 0))}Z" fill="${s.color}" opacity=".12"/>`;
+      if (s.area) paths += `<defs><linearGradient id="${cid}g${si}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${s.color}" stop-opacity=".28"/><stop offset="1" stop-color="${s.color}" stop-opacity=".02"/></linearGradient></defs><path class="ar" d="${d}L${pts[pts.length - 1][0].toFixed(1)} ${y(Math.max(sc.min, 0))}L${pts[0][0].toFixed(1)} ${y(Math.max(sc.min, 0))}Z" fill="url(#${cid}g${si})"/>`;
+      if (s.areaOnly) return;
       paths += `<path ${s.dashed ? 'class="ln-d" stroke-dasharray="5 5"' : 'class="ln" pathLength="1"'} d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
       if (s.endDot) { const p = pts[pts.length - 1]; paths += `<circle class="end-dot" cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`; }
       paths += `<circle class="xh-dot" data-s="${si}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2" cx="-10" cy="-10"/>`;
@@ -839,7 +848,9 @@
       bars += `<text class="ax" x="${x0 + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(shortMonth(t.month))}</text>`;
     });
     const avgLine = avg > 0 ? `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--muted)" stroke-dasharray="4 4"/><text class="ax" x="${W - R}" y="${y(avg) - 5}" text-anchor="end">avg ${esc(compact(avg))}</text>` : "";
-    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending by month">${g}${bars}${avgLine}</svg></div>`;
+    const gid = "mb" + (++chartSeq);
+    bars = bars.replace(/fill="var\(--s1\)" opacity="1"/g, `fill="url(#${gid})" opacity="1"`);
+    return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending by month"><defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#5b8dff"/><stop offset="1" stop-color="var(--s1)"/></linearGradient></defs>${g}${bars}${avgLine}</svg></div>`;
   }
 
   // ------------------------------------------------------------------ shared bits
@@ -909,7 +920,7 @@
   const catMark = (c, sm) => `<span class="cm${sm ? " sm" : ""}" style="--c:${catColor(c)}" aria-hidden="true">${catSvg(catIconKey(c))}</span>`;
   const catLabel = (c) => `<span class="cl">${catMark(c, true)}<span>${esc(c ? c.name : "Uncategorized")}</span></span>`;
   const avatar = (name, cat) => (cat && typeof cat === "object") ? catMark(cat)
-    : `<span class="av" aria-hidden="true">${esc((String(name || "?").trim().charAt(0) || "?").toUpperCase())}</span>`;
+    : `<span class="av" style="--c:var(--s${(hashStr(String(name || "").toLowerCase()) % 8) + 1})" aria-hidden="true">${esc((String(name || "?").trim().charAt(0) || "?").toUpperCase())}</span>`;
 
   // ---- wording
   const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
@@ -1148,7 +1159,7 @@
           </div>
         </div>
 
-        ${goals.length ? `<section class="card"><div class="card-h"><h2>Goals</h2><div class="spacer"></div><a href="#/goals" class="small">All goals →</a></div>
+        ${goals.length ? `<section class="card"><div class="card-h"><h2 class="ic-h">${hIc("goals", "s3")}Goals</h2><div class="spacer"></div><a href="#/goals" class="small">All goals →</a></div>
           <div class="grid goals-grid">${goals.map(goalCard).join("")}</div></section>` : ""}
       </div>`;
     const byId = Object.fromEntries(recent.items.map((t) => [t.id, t]));
@@ -1183,24 +1194,24 @@
       <div class="stack">
         ${summary}
         <div class="grid kpis">
-          <div class="card kpi"><div class="label">Spent</div><div class="value num">${money(s.total)}</div><div class="sub">${plural(s.transactions, "purchase")}</div></div>
-          <div class="card kpi"><div class="label">${paced ? "vs usual at this point" : `vs ${s.months_compared || 5}-month average`}</div><div class="value num">${base ? money(Math.abs(vsAvg)) + `<span class="${vsAvg > 0 ? "negc" : "pos"}" style="font-size:14px;font-weight:600"> ${vsAvg > 0 ? "more" : "less"}</span>` : "—"}</div><div class="sub">${paced ? `Usually ${money(base)} by day ${s.day} · ${money(s.average)} a full month` : `Average ${money(s.average)} a month`}</div></div>
-          <div class="card kpi"><div class="label">Income</div><div class="value num pos">${money(s.income)}</div><div class="sub">${s.income ? `Spent ${Math.round((s.total / s.income) * 100)}% of income` : "No income this month"}</div></div>
+          <div class="card kpi feat tone-blue"><div class="label ic-l">${hIc("spending", "s1")}Spent</div><div class="value num">${money(s.total)}</div><div class="sub">${plural(s.transactions, "purchase")}</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("trend", "s7")}${paced ? "vs usual at this point" : `vs ${s.months_compared || 5}-month average`}</div><div class="value num">${base ? money(Math.abs(vsAvg)) + `<span class="${vsAvg > 0 ? "negc" : "pos"}" style="font-size:14px;font-weight:600"> ${vsAvg > 0 ? "more" : "less"}</span>` : "—"}</div><div class="sub">${paced ? `Usually ${money(base)} by day ${s.day} · ${money(s.average)} a full month` : `Average ${money(s.average)} a month`}</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("banknote", "s3")}Income</div><div class="value num pos">${money(s.income)}</div><div class="sub">${s.income ? `Spent ${Math.round((s.total / s.income) * 100)}% of income` : "No income this month"}</div></div>
         </div>
         <div class="grid two">
           <div class="card">
-            <div class="card-h"><h2>By category</h2>${uncat ? `<div class="spacer"></div><span class="small muted">${money(uncat.total)} uncategorized</span><a class="btn sm" href="#/transactions?uncat=1">Categorize</a>` : ""}</div>
+            <div class="card-h"><h2 class="ic-h">${hIc("tag", "s2")}By category</h2>${uncat ? `<div class="spacer"></div><span class="small muted">${money(uncat.total)} uncategorized</span><a class="btn sm" href="#/transactions?uncat=1">Categorize</a>` : ""}</div>
             ${s.categories.length ? `<div class="donut-wrap">${donut(items, s.total, "spent")}
               <div class="d-legend">${items.map((it, i) => `<button class="d-item" data-i="${i}" ${it.id != null ? `data-cat="${it.id}"` : "disabled"}>${catMark(it.cat, true)}<span class="grow">${esc(it.label)}</span><span class="num">${money(it.value)}</span><span class="num muted small">${s.total ? Math.round((it.value / s.total) * 100) : 0}%</span></button>`).join("")}</div></div>`
               : `<div class="empty">No spending in ${esc(monthLabel(state.month))}.</div>`}
             ${s.excluded && s.excluded.count ? `<div class="row small muted ex-note"><span>${plural(s.excluded.count, "transaction")} (${money(Math.abs(s.excluded.total))}) not counted because you excluded ${s.excluded.count === 1 ? "it" : "them"}</span><div class="spacer"></div><a href="#/transactions?excluded=1">View</a></div>` : ""}
           </div>
           <div class="card">
-            <div class="card-h"><h2>Top merchants</h2><div class="spacer"></div><span class="small muted">${esc(monthLabel(state.month))}</span></div>
+            <div class="card-h"><h2 class="ic-h">${hIc("bag", "s5")}Top merchants</h2><div class="spacer"></div><span class="small muted">${esc(monthLabel(state.month))}</span></div>
             ${s.merchants.length ? `<ol class="m-list">${s.merchants.slice(0, 10).map((m, i) => `<li><span class="m-rank num">${i + 1}</span><span class="grow desc">${esc(m.name)}</span><span class="small muted num">${plural(m.count, "visit")}</span><span class="m-meter" aria-hidden="true"><i style="width:${(m.total / merchMax) * 100}%"></i></span><span class="num m-amt">${money(m.total)}</span></li>`).join("")}</ol>` : `<div class="muted small">Nothing yet.</div>`}
           </div>
         </div>
-        <div class="card"><div class="card-h"><h2>Last 6 months</h2></div>${monthBars(s.trend, s.average, state.month)}</div>
+        <div class="card"><div class="card-h"><h2 class="ic-h">${hIc("spending", "s1")}Last 6 months</h2></div>${monthBars(s.trend, s.average, state.month)}</div>
       </div>`;
     const goCat = (id) => { txState.category = id || "__none"; txState.page = 1; location.hash = "#/transactions"; };
     $$(".d-item[data-cat]", view).forEach((b) => (b.onclick = () => goCat(b.dataset.cat)));
@@ -1288,43 +1299,43 @@
         ${empty ? `<div class="card empty">Nothing recorded for ${esc(label)} yet.</div>` : `
         <p class="sp-sum">${say}</p>
         <div class="grid kpis">
-          <div class="card kpi"><div class="label">Income</div><div class="value num pos">${money(d.income)}</div><div class="sub">${sub(d.income, d.prev.income, true)}</div></div>
-          <div class="card kpi"><div class="label">Spent</div><div class="value num">${money(d.spent)}</div><div class="sub">${sub(d.spent, d.prev.spent, false)}</div></div>
-          <div class="card kpi"><div class="label">${d.net >= 0 ? "Kept" : "Short"}</div><div class="value num ${d.net < 0 ? "negc" : ""}">${money(Math.abs(d.net))}${d.savings_rate != null && d.net > 0 ? `<span class="muted" style="font-size:14px;font-weight:600"> ${d.savings_rate}% saved</span>` : ""}</div>
+          <div class="card kpi"><div class="label ic-l">${hIc("banknote", "s3")}Income</div><div class="value num pos">${money(d.income)}</div><div class="sub">${sub(d.income, d.prev.income, true)}</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("spending", "s2")}Spent</div><div class="value num">${money(d.spent)}</div><div class="sub">${sub(d.spent, d.prev.spent, false)}</div></div>
+          <div class="card kpi feat ${d.net >= 0 ? "tone-good" : "tone-bad"}"><div class="label ic-l">${hIc("coins", "s3")}${d.net >= 0 ? "Kept" : "Short"}</div><div class="value num ${d.net < 0 ? "negc" : ""}">${money(Math.abs(d.net))}${d.savings_rate != null && d.net > 0 ? `<span class="muted" style="font-size:14px;font-weight:600"> ${d.savings_rate}% saved</span>` : ""}</div>
             <div class="sub">${d.prev.has_data && d.prev.savings_rate != null ? `${d.prev.savings_rate}% in ${esc(vs)}` : d.income > 0 ? "Of what came in" : "No income recorded"}</div></div>
         </div>
         ${isYear ? `<section class="card" aria-labelledby="rep-mo">
-          <div class="card-h"><div><h2 id="rep-mo">Month by month</h2><div class="small muted">${d.avg_spent ? `About ${money(d.avg_spent)} spent a month` : ""}${d.best_month ? ` · best ${esc(shortMonth(d.best_month.month))} (kept ${money(d.best_month.income - d.best_month.spent)})` : ""}${d.worst_month && d.worst_month.month !== (d.best_month || {}).month ? ` · toughest ${esc(shortMonth(d.worst_month.month))}` : ""}</div></div><div class="spacer"></div>
+          <div class="card-h"><div><h2 id="rep-mo" class="ic-h">${hIc("spending", "s1")}Month by month</h2><div class="small muted">${d.avg_spent ? `About ${money(d.avg_spent)} spent a month` : ""}${d.best_month ? ` · best ${esc(shortMonth(d.best_month.month))} (kept ${money(d.best_month.income - d.best_month.spent)})` : ""}${d.worst_month && d.worst_month.month !== (d.best_month || {}).month ? ` · toughest ${esc(shortMonth(d.worst_month.month))}` : ""}</div></div><div class="spacer"></div>
             <div class="legend" style="margin:0"><span style="--c:var(--s3)">Income</span><span style="--c:var(--s1)">Spent</span></div></div>
           ${pairBars(d.months)}
         </section>` : ""}
         <div class="grid two top-align">
           <section class="card" aria-labelledby="rep-ch">
-            <div class="card-h"><div><h2 id="rep-ch">What changed</h2><div class="small muted">${esc(cmpLabel)}</div></div></div>
+            <div class="card-h"><div><h2 id="rep-ch" class="ic-h">${hIc("trend", "s7")}What changed</h2><div class="small muted">${esc(cmpLabel)}</div></div></div>
             ${d.up.length || d.down.length ? `
               ${d.up.length ? `<div class="kind-h">Up</div><ul class="rep-list">${d.up.map(mover).join("")}</ul>` : ""}
               ${d.down.length ? `<div class="kind-h">Down</div><ul class="rep-list">${d.down.map(mover).join("")}</ul>` : ""}`
               : `<div class="muted small">${(isYear ? d.prev.has_data : d.compare_months) ? "No category moved by more than $10." : `Not enough history yet. This fills in once there's an earlier ${isYear ? "year" : "month"} to compare with.`}</div>`}
           </section>
           <section class="card" aria-labelledby="rep-me">
-            <div class="card-h"><h2 id="rep-me">Top merchants</h2></div>
+            <div class="card-h"><h2 id="rep-me" class="ic-h">${hIc("bag", "s5")}Top merchants</h2></div>
             ${d.merchants.length ? `<ol class="m-list">${d.merchants.map((m, i) => `<li><span class="m-rank num">${i + 1}</span><span class="grow desc">${esc(m.name)}</span><span class="small muted num">${plural(m.count, "visit")}</span><span class="m-meter" aria-hidden="true"><i style="width:${(m.total / merchMax) * 100}%"></i></span><span class="num m-amt">${money(m.total)}</span></li>`).join("")}</ol>` : `<div class="muted small">No purchases.</div>`}
           </section>
         </div>
         <div class="grid two top-align">
           <section class="card" aria-labelledby="rep-ca">
-            <div class="card-h"><h2 id="rep-ca">By category</h2><div class="spacer"></div><span class="small muted">${d.prev.has_data || d.compare_months ? esc(cmpLabel.replace(/^vs /, "Change vs ")) : ""}</span></div>
+            <div class="card-h"><h2 id="rep-ca" class="ic-h">${hIc("tag", "s2")}By category</h2><div class="spacer"></div><span class="small muted">${d.prev.has_data || d.compare_months ? esc(cmpLabel.replace(/^vs /, "Change vs ")) : ""}</span></div>
             <div class="rep-cats">${d.categories.filter((c) => c.total > 0).map((c) => `<div class="rep-cat"><span class="grow">${catLabel(c.id ? catById(c.id) || c : null)}</span><span class="num">${money(c.total)}</span><span class="num small rep-ch ${Math.abs(c.change) < 1 ? "muted" : c.change > 0 ? "negc" : "pos"}">${(isYear ? d.prev.has_data : d.compare_months) ? (Math.abs(c.change) < 1 ? "—" : `${c.change > 0 ? "+" : "−"}${money(Math.abs(c.change))}`) : ""}</span></div>`).join("")}</div>
           </section>
           <div class="stack">
             <section class="card" aria-labelledby="rep-su">
-              <div class="card-h"><h2 id="rep-su">Subscriptions</h2><div class="spacer"></div><span class="num"><b>${money(d.subscriptions.total)}</b></span></div>
+              <div class="card-h"><h2 id="rep-su" class="ic-h">${hIc("repeat", "s7")}Subscriptions</h2><div class="spacer"></div><span class="num"><b>${money(d.subscriptions.total)}</b></span></div>
               ${d.subscriptions.items.length ? `<ol class="m-list">${d.subscriptions.items.map((s) => `<li><span class="grow desc">${esc(s.name)}${s.status !== "active" ? ' <span class="pill">cancelled</span>' : ""}</span><span class="small muted num">${plural(s.count, "charge")}</span><span class="m-meter" aria-hidden="true"><i style="width:${(s.total / subMax) * 100}%;background:var(--s7)"></i></span><span class="num m-amt">${money(s.total)}</span></li>`).join("")}</ol>
                 ${isYear ? "" : `<p class="small muted" style="margin:10px 0 0">About ${money(d.subscriptions.total * 12)} a year at this rate. <a href="#/recurring">Review subscriptions</a></p>`}`
                 : `<div class="muted small">No subscription charges ${isYear ? "this year" : "this month"}.</div>`}
             </section>
             <section class="card" aria-labelledby="rep-la">
-              <div class="card-h"><h2 id="rep-la">Largest purchases</h2></div>
+              <div class="card-h"><h2 id="rep-la" class="ic-h">${hIc("receipt", "s8")}Largest purchases</h2></div>
               ${d.largest.length ? d.largest.map((t) => `<div class="m-row"><span>${esc(t.name)} <span class="muted small">${esc(prettyDate(t.date))}</span></span><span class="num">${money(t.amount)}</span></div>`).join("") : `<div class="muted small">None.</div>`}
             </section>
           </div>
@@ -1408,9 +1419,9 @@
     view.innerHTML = `
       <div class="stack">
         <div class="grid kpis">
-          <div class="card kpi"><div class="label">Recurring costs</div><div class="value num">${money(t.expenses)}${per}</div><div class="sub">${money(t.bills)} bills + ${money(t.subscriptions)} subscriptions</div></div>
-          <div class="card kpi"><div class="label">Still due ${isNow ? "this month" : "in " + esc(monthLabel(state.month))}</div><div class="value num">${money(t.remaining_this_month)}</div><div class="sub">${money(t.paid_this_month)} paid so far</div></div>
-          <div class="card kpi"><div class="label">Recurring income</div><div class="value num">${incomeValue}</div><div class="sub">${incomeSub}</div></div>
+          <div class="card kpi feat tone-blue"><div class="label ic-l">${hIc("recurring", "s1")}Recurring costs</div><div class="value num">${money(t.expenses)}${per}</div><div class="sub">${money(t.bills)} bills + ${money(t.subscriptions)} subscriptions</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("calendar", "s4")}Still due ${isNow ? "this month" : "in " + esc(monthLabel(state.month))}</div><div class="value num">${money(t.remaining_this_month)}</div><div class="sub">${money(t.paid_this_month)} paid so far</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("banknote", "s3")}Recurring income</div><div class="value num">${incomeValue}</div><div class="sub">${incomeSub}</div></div>
         </div>
         ${r.possibly_cancelled ? `<div class="callout small warn-c">${plural(r.possibly_cancelled, "subscription")} didn't charge when expected: ${r.items.filter((x) => x.possibly_cancelled).map((x) => `<b>${esc(x.name)}</b>`).join(", ")}. If you cancelled ${r.possibly_cancelled === 1 ? "it" : "them"}, Keel will mark ${r.possibly_cancelled === 1 ? "it" : "them"} cancelled after one more missed charge, or you can do it now.</div>` : ""}
         <div class="card">
@@ -1633,7 +1644,8 @@
     const nwSeries = est ? [
       { values: pts.map((p, i) => (p.estimated || i === firstReal ? p.net : null)), color: "var(--s1)", dashed: true, endDot: firstReal < 0 },
       { values: pts.map((p) => (p.estimated ? null : p.net)), color: "var(--s1)", endDot: true },
-    ] : [{ values: pts.map((p) => p.net), color: "var(--s1)", area: false, endDot: true }];
+      { values: pts.map((p) => p.net), color: "var(--s1)", area: true, areaOnly: true },
+    ] : [{ values: pts.map((p) => p.net), color: "var(--s1)", area: true, endDot: true }];
     const chart = pts.length > 1 ? lineChart({
       n: pts.length, yMinZero: false, height: 240, ariaLabel: "Net worth over time",
       series: nwSeries,
@@ -1651,8 +1663,8 @@
     const pctCh = startNet ? (nw.change / Math.abs(startNet)) * 100 : 0;
     view.innerHTML = `
       <div class="stack">
-        <div class="card hero">
-          <div class="card-h"><div><div class="label">Net worth</div><div class="big num">${money(nw.net)}</div>
+        <div class="card hero glow" style="--c:var(--s1)">
+          <div class="card-h"><div><div class="label ic-l">${hIc("networth", "s1")}Net worth</div><div class="big num">${money(nw.net)}</div>
             <div class="small muted">${nw.change === 0 ? "No change" : `<span class="${nw.change > 0 ? "pos" : "negc"}">${signed(nw.change)}${startNet ? ` (${pctCh >= 0 ? "+" : "−"}${Math.abs(pctCh).toFixed(1)}%)` : ""}</span>`} over the last ${nwState.days} days</div></div>
             <div class="spacer"></div>
             <div class="seg">${[[30, "1M"], [90, "3M"], [180, "6M"], [365, "1Y"]].map(([dd, l]) => `<button data-days="${dd}" class="${nwState.days === dd ? "on" : ""}">${l}</button>`).join("")}</div></div>
@@ -1660,9 +1672,9 @@
           ${est ? `<div class="row" style="margin-top:8px"><div class="legend" style="margin:0"><span style="--c:var(--s1)">Recorded</span><span class="dash" style="--c:var(--s1)">Estimated</span></div><span class="small muted">Earlier points are estimated from your transactions. Keel records your balances daily from now on.</span></div>` : ""}
         </div>
         <div class="grid halves top">
-          <div class="card"><div class="card-h"><h2>Assets</h2><div class="spacer"></div><span class="num">${money(nw.assets)}</span></div>${list(assetG) || `<div class="muted small">No accounts yet.</div>`}</div>
-          ${liabG.length ? `<div class="card"><div class="card-h"><h2>Liabilities</h2><div class="spacer"></div><span class="num">${money(nw.liabilities)}</span></div>${list(liabG)}</div>`
-            : `<div class="card slim"><div class="row"><h2>Liabilities</h2><div class="spacer"></div><span class="num">${money(0)}</span></div><div class="small muted">No credit cards or loans connected.</div></div>`}
+          <div class="card"><div class="card-h"><h2 class="ic-h">${hIc("networth", "s3")}Assets</h2><div class="spacer"></div><span class="num">${money(nw.assets)}</span></div>${list(assetG) || `<div class="muted small">No accounts yet.</div>`}</div>
+          ${liabG.length ? `<div class="card"><div class="card-h"><h2 class="ic-h">${hIc("card", "s8")}Liabilities</h2><div class="spacer"></div><span class="num">${money(nw.liabilities)}</span></div>${list(liabG)}</div>`
+            : `<div class="card slim"><div class="row"><h2 class="ic-h">${hIc("card", "s8")}Liabilities</h2><div class="spacer"></div><span class="num">${money(0)}</span></div><div class="small muted">No credit cards or loans connected.</div></div>`}
         </div>
         <p class="small muted">Hide an account from net worth on the <a href="#/accounts">Accounts</a> page. Credit cards and loans count as debts.</p>
       </div>`;
@@ -1997,7 +2009,7 @@
     return `<div class="b-row click" data-id="${c.id || ""}" role="button" tabindex="0" aria-label="${esc(c.name)}: ${esc(over ? money(-c.remaining) + " over" : money(c.remaining) + " left")}. Edit budget">
       <div class="row"><span class="b-name">${catLabel(c)}</span>${c.rollover ? `<span class="pill" title="Unspent money carries over to next month">rollover</span>` : ""}
         <div class="spacer"></div>${used != null ? `<span class="b-pct num ${cls}">${onPlan ? "Paid" : used + "%"}</span>` : ""}<span class="num b-left ${over ? "over" : ""}">${over ? money(-c.remaining) + " over" : money(c.remaining) + " left"}</span></div>
-      <div class="bar ${cls}"><i style="width:${pct}%"></i>${proj != null && proj > pct ? `<b style="left:${proj}%" ${tipAttr(`On pace for <b>${esc(money(c.projected))}</b> by the end of the month`)}></b>` : ""}</div>
+      <div class="bar ${cls}"><i style="width:${pct}%;${cls ? "" : `background:${catColor(c)}`}"></i>${proj != null && proj > pct ? `<b style="left:${proj}%" ${tipAttr(`On pace for <b>${esc(money(c.projected))}</b> by the end of the month`)}></b>` : ""}</div>
       <div class="small muted">${money(c.spent)} of ${money(c.available)}${c.carry ? ` · ${c.carry > 0 ? "+" : ""}${money(c.carry)} rolled over` : ""}${c.avg3 && !tooLow ? ` · usually ${money(c.avg3)}` : ""}</div>
       ${tooLow ? `<div class="small warn-t">You usually spend ${money(c.avg3)} here, so this budget may be too low.</div>` : ""}
     </div>`;
@@ -2021,7 +2033,7 @@
     view.innerHTML = `
       <div class="stack">
         ${hasBudget ? `
-        <div class="card b-hero">
+        <div class="card b-hero glow" style="--c:var(--s1)">
           <div class="b-ring">${ring(d.budget_left < 0 ? 100 : 100 - usedPct, ringCls, money(Math.abs(d.budget_left)), d.budget_left < 0 ? "over budget" : "left to spend")}
             <div class="small muted center">${money(d.spent)} spent of ${money(d.budgeted)}</div>
             ${d.is_current && d.remaining_days && d.budget_left > 0 ? `<div class="small center"><b class="num">${money(d.safe_per_day)}</b>/day for ${d.remaining_days} more days</div>` : ""}
@@ -2053,7 +2065,7 @@
 
         <div class="grid two">
           <div class="card">
-            <div class="card-h"><h2>Spending</h2><div class="spacer"></div>
+            <div class="card-h"><h2 class="ic-h">${hIc("spending", "s1")}Spending</h2><div class="spacer"></div>
               ${hasBudget ? `<button class="btn sm" id="wizard" title="Walk through income, bills and category limits again">Adjust budget</button>` : ""}<button class="btn sm primary" id="add-budget">+ Category budget</button></div>
             ${budgeted.length ? budgeted.map((c) => budgetRow(c, d)).join("") : `<div class="muted small" style="margin-bottom:12px">No category budgets yet. Add one for anything you want to watch closely, like Dining Out or Groceries.</div>`}
             ${hasBudget ? budgetRow({ id: "", name: "Everything else", available: ee.budget, spent: ee.spent, remaining: ee.remaining, carry: 0, avg3: ee.avg3, projected: 0 }, d) : ""}
@@ -2064,19 +2076,19 @@
           </div>
           <div class="stack">
             <div class="card">
-              <div class="card-h"><h2>Bills this month</h2><div class="spacer"></div><span class="small muted">${money(d.bills.paid_this_month)} paid · ${money(d.bills.remaining_this_month)} to go</span></div>
+              <div class="card-h"><h2 class="ic-h">${hIc("calendar", "s4")}Bills this month</h2><div class="spacer"></div><span class="small muted">${money(d.bills.paid_this_month)} paid · ${money(d.bills.remaining_this_month)} to go</span></div>
               ${billsSorted.length ? billsSorted.map((b) => {
                 const status = b.paid ? `<span class="pill ok">✓ paid</span>` : b.date < today ? `<span class="pill err">not seen</span>` : `<span class="small muted">${dueText(Math.round((new Date(b.date) - new Date(today)) / 86400000))}</span>`;
                 return `<div class="bill-line">${avatar(b.name)}<div class="grow"><div class="t-name">${esc(b.name)}</div><div class="small muted">${prettyDate(b.date)}</div></div><div class="right"><div class="num">${money(b.paid ? b.paid_amount : b.amount)}</div>${status}</div></div>`;
               }).join("") : `<div class="muted small">No bills tracked. <a href="#/recurring">Review recurring charges</a>.</div>`}
             </div>
             <div class="card">
-              <div class="card-h"><h2>Income</h2><div class="spacer"></div><span class="num pos">${money(d.income)}</span></div>
+              <div class="card-h"><h2 class="ic-h">${hIc("banknote", "s3")}Income</h2><div class="spacer"></div><span class="num pos">${money(d.income)}</span></div>
               <div class="bar good"><i style="width:${incomePct}%"></i></div>
               <div class="small muted" style="margin-top:6px">${money(d.income)} of ${money(d.expected_income)} expected${d.income_override ? "" : " (based on recent months)"}</div>
             </div>
             <div class="card">
-              <div class="card-h"><h2>50 / 30 / 20 check</h2></div>
+              <div class="card-h"><h2 class="ic-h">${hIc("budget", "s7")}50 / 30 / 20 check</h2></div>
               <div class="split">
                 <i style="width:${Math.min(100, (d.split.needs / (d.expected_income || 1)) * 100)}%;background:var(--s1)"></i>
                 <i style="width:${Math.min(100, (d.split.wants / (d.expected_income || 1)) * 100)}%;background:var(--s2)"></i>
@@ -2373,7 +2385,7 @@
         ${!conns.length ? `<section class="card acc-empty"><span class="cm" style="--c:var(--s1)" aria-hidden="true">${catSvg("swap")}</span><div class="grow"><b>Connect your bank</b><div class="small muted">Sync balances and transactions every day through <a href="https://beta-bridge.simplefin.org" target="_blank" rel="noopener">SimpleFIN Bridge</a>, or keep manual accounts and import CSV files.</div></div></section>` : ""}
 
         <section class="card" aria-labelledby="acc-man">
-          <div class="card-h"><div class="grow"><h2 id="acc-man">Manual accounts</h2><div class="small muted">You update these yourself or with a CSV import${byConn[""] && byConn[""].length ? ` · ${money(sum(byConn[""]))} in all` : ""}</div></div>
+          <div class="card-h"><div class="grow"><h2 id="acc-man" class="ic-h">${hIc("accounts", "s1")}Manual accounts</h2><div class="small muted">You update these yourself or with a CSV import${byConn[""] && byConn[""].length ? ` · ${money(sum(byConn[""]))} in all` : ""}</div></div>
             <button class="btn" id="import-csv">Import CSV</button>
             <button class="btn primary" id="add-acc">+ Account</button></div>
           ${list(byConn[""])}
@@ -2696,25 +2708,25 @@
       <div class="stack">
         ${head}
         <div class="grid kpis cf-kpis">
-          <div class="card kpi cf-low ${danger ? "danger" : ""}"><div class="label">Lowest point</div><div class="value num ${danger ? "negc" : ""}">${money(f.low.balance)}</div><div class="sub">${esc(cap(lowWhen))}${f.before_payday && f.before_payday.day !== f.low.day && f.next_income ? `<br>${money(f.before_payday.balance)} before your ${esc(prettyDate(f.next_income.day))} deposit` : ""}</div></div>
-          <div class="card kpi"><div class="label">Balance now</div><div class="value num">${money(f.start)}</div><div class="sub">${esc(f.accounts.map(acctLabel).join(", "))}</div></div>
-          <div class="card kpi"><div class="label">In ${f.days} days</div><div class="value num">${money(f.end_balance)}</div><div class="sub">${change === 0 ? "No change" : signed(change)} from today</div></div>
+          <div class="card kpi feat ${danger ? "tone-bad" : "tone-blue"} cf-low ${danger ? "danger" : ""}"><div class="label ic-l">${hIc("cashflow", "s8")}Lowest point</div><div class="value num ${danger ? "negc" : ""}">${money(f.low.balance)}</div><div class="sub">${esc(cap(lowWhen))}${f.before_payday && f.before_payday.day !== f.low.day && f.next_income ? `<br>${money(f.before_payday.balance)} before your ${esc(prettyDate(f.next_income.day))} deposit` : ""}</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("accounts", "s1")}Balance now</div><div class="value num">${money(f.start)}</div><div class="sub">${esc(f.accounts.map(acctLabel).join(", "))}</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("calendar", "s7")}In ${f.days} days</div><div class="value num">${money(f.end_balance)}</div><div class="sub">${change === 0 ? "No change" : signed(change)} from today</div></div>
         </div>
         ${callout}
         <section class="card" aria-labelledby="cf-chart-h">
-          <div class="card-h"><div><h2 id="cf-chart-h">Projected balance</h2><div class="small muted">A projection from your bills, paychecks and usual spending, not a guarantee</div></div><div class="spacer"></div>
+          <div class="card-h"><div><h2 id="cf-chart-h" class="ic-h">${hIc("cashflow", "s1")}Projected balance</h2><div class="small muted">A projection from your bills, paychecks and usual spending, not a guarantee</div></div><div class="spacer"></div>
             <div class="legend" style="margin:0"><span class="mk-in">Deposit</span><span class="mk-out">Bill</span>${alt ? `<span class="dash" style="--c:var(--s7)">What-if</span>` : ""}</div></div>
           ${chart}
           <div class="cf-marks" aria-hidden="true">${marks}</div>
         </section>
         <div class="grid two cf-cols">
           <section class="card" id="cf-list" aria-labelledby="cf-list-h">
-            <div class="card-h"><h2 id="cf-list-h">Coming up</h2><div class="spacer"></div><span class="small muted">+${money(f.income_total)} in · −${money(f.bills_total)} bills</span></div>
+            <div class="card-h"><h2 id="cf-list-h" class="ic-h">${hIc("calendar", "s4")}Coming up</h2><div class="spacer"></div><span class="small muted">+${money(f.income_total)} in · −${money(f.bills_total)} bills</span></div>
             ${rows || `<div class="muted small">No bills or paychecks expected in this window.</div>`}
           </section>
           <div class="stack">
             <section class="card" aria-labelledby="cf-wi-h">
-              <div class="card-h"><h2 id="cf-wi-h">What if…</h2></div>
+              <div class="card-h"><h2 id="cf-wi-h" class="ic-h">${hIc("sparkle", "s7")}What if…</h2></div>
               <p class="small muted" style="margin-top:0">Try a one-off expense or deposit and see how it changes the forecast. Nothing is saved.</p>
               <form id="cf-wi" class="cf-wi">
                 <select name="dir" aria-label="Expense or deposit"><option value="-1" ${!wi || wi.amount < 0 ? "selected" : ""}>I spend</option><option value="1" ${wi && wi.amount > 0 ? "selected" : ""}>I receive</option></select>
@@ -2725,7 +2737,7 @@
               ${wiResult}
             </section>
             <section class="card" aria-labelledby="cf-how-h">
-              <div class="card-h"><h2 id="cf-how-h">How it's worked out</h2></div>
+              <div class="card-h"><h2 id="cf-how-h" class="ic-h">${hIc("receipt", "s2")}How it's worked out</h2></div>
               <div class="m-row"><span>Balance now</span><span class="num">${money(f.start)}</span></div>
               <div class="m-row"><span>Paychecks and deposits <span class="muted small">scheduled</span></span><span class="num pos">+${money(f.income_total)}</span></div>
               <div class="m-row"><span>Bills and subscriptions <span class="muted small">scheduled</span></span><span class="num">−${money(f.bills_total)}</span></div>
@@ -2735,7 +2747,7 @@
               <p class="small muted" style="margin:10px 0 0">Everyday spending is what usually leaves these accounts outside your recurring bills (card payments and transfers out included), averaged over the last ${plural(f.lookback_days, "day")}. Bills charged to a credit card are left out, since they're paid through the card payment.</p>
             </section>
             <section class="card" aria-labelledby="cf-floor-h">
-              <div class="card-h"><h2 id="cf-floor-h">Low balance warning</h2></div>
+              <div class="card-h"><h2 id="cf-floor-h" class="ic-h">${hIc("bell", "s8")}Low balance warning</h2></div>
               <form id="cf-floor" class="stack">
                 <label class="field"><span>Warn me if it's projected below ($)</span><input name="floor" type="number" min="0" step="1" value="${f.floor || 0}"></label>
                 <label class="set-row" style="border:0;padding:0"><span class="grow"><b>Email me</b><span class="small muted">When it's coming up in the next 2 weeks${state.status.smtp ? "" : " (needs email set up)"}</span></span><input type="checkbox" class="sw" name="alerts" ${me.cash_alerts ? "checked" : ""} ${state.status.smtp ? "" : "disabled"}></label>
@@ -2797,11 +2809,11 @@
     if (!vals || vals.length < 2) return "";
     const W = 96, H = 28, lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
     const pts = vals.map((v, i) => `${((i / (vals.length - 1)) * (W - 4) + 2).toFixed(1)},${(H - 3 - ((v - lo) / span) * (H - 6)).toFixed(1)}`).join(" ");
-    return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
   }
   function goalCard(g) {
     const pct = Math.round(g.pct * 100);
-    return `<div class="card goal" data-id="${g.id}" role="button" tabindex="0" aria-label="${esc(g.name)} goal details">
+    return `<div class="card goal" style="--gc:${catColor({ name: g.name, icon: "target" })}" data-id="${g.id}" role="button" tabindex="0" aria-label="${esc(g.name)} goal details">
       <div class="row"><b class="cl">${catMark({ name: g.name, icon: "target" }, true)}<span>${esc(g.name)}</span></b><div class="spacer"></div>${goalPill(g)}</div>
       <div class="small muted g-src">${g.linked ? `Tracks ${esc(acctLabel(g.account))}` : "Tracked by hand"}</div>
       <div class="row g-amt"><div><span class="g-cur num">${money(g.current)}</span> <span class="muted small">of ${money(g.target)}</span></div><div class="spacer"></div>${sparkline(g.spark)}</div>
@@ -2825,9 +2837,9 @@
         <div class="row"><p class="muted" style="margin:0">${goals.length ? `Link a goal to a savings account and Keel follows the balance for you.` : "Set savings goals (an emergency fund, a trip, a down payment) and see what to put away each day to get there."}</p>
           <div class="spacer"></div><button class="btn primary" id="add-goal">+ Goal</button></div>
         ${goals.length ? `<div class="grid kpis">
-          <div class="card kpi"><div class="label">Saved toward goals</div><div class="value num">${money(t.saved)}</div><div class="sub">of ${money(t.target)} · ${t.target ? Math.round((t.saved / t.target) * 100) : 0}%</div></div>
-          <div class="card kpi"><div class="label">Needed to stay on schedule</div><div class="value num">${money(t.per_month)}<span class="muted" style="font-size:14px;font-weight:500">/mo</span></div><div class="sub">${t.per_month ? `About ${money(t.per_month / 30.44)} a day` : "No dated goals left"}</div></div>
-          <div class="card kpi"><div class="label">On track</div><div class="value num">${dated ? `${onTrack} of ${dated}` : "—"}</div><div class="sub">${open.length ? `${plural(open.length, "goal")} in progress` : "Every goal reached"}</div></div>
+          <div class="card kpi feat tone-good"><div class="label ic-l">${hIc("goals", "s3")}Saved toward goals</div><div class="value num">${money(t.saved)}</div><div class="sub">of ${money(t.target)} · ${t.target ? Math.round((t.saved / t.target) * 100) : 0}%</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("calendar", "s4")}Needed to stay on schedule</div><div class="value num">${money(t.per_month)}<span class="muted" style="font-size:14px;font-weight:500">/mo</span></div><div class="sub">${t.per_month ? `About ${money(t.per_month / 30.44)} a day` : "No dated goals left"}</div></div>
+          <div class="card kpi"><div class="label ic-l">${hIc("trend", "s3")}On track</div><div class="value num">${dated ? `${onTrack} of ${dated}` : "—"}</div><div class="sub">${open.length ? `${plural(open.length, "goal")} in progress` : "Every goal reached"}</div></div>
         </div>
         <div class="grid goals-grid">${goals.map(goalCard).join("")}</div>` : `<div class="card empty-cta"><span class="cm" style="--c:var(--s3)" aria-hidden="true">${catSvg("target")}</span>
           <div><h2>Start your first goal</h2><p class="muted">Pick a target and a date. Keel works out what to put away each day, and if you link a savings account it follows the balance on every sync.</p>
@@ -3026,13 +3038,13 @@
       <div class="grid two top-align">
         <div class="stack">
           <section class="card" aria-labelledby="set-ap">
-            <div class="card-h"><h2 id="set-ap">Appearance</h2></div>
+            <div class="card-h"><h2 id="set-ap" class="ic-h">${hIc("palette", "s7")}Appearance</h2></div>
             <div class="set-row"><span class="grow"><b>Theme</b><span class="small muted">System follows your device's light or dark setting.</span></span>
               <div class="seg" role="radiogroup" aria-label="Theme">${[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([k, l]) => `<button type="button" role="radio" aria-checked="${theme === k}" data-theme-pick="${k}" class="${theme === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
           </section>
 
           <section class="card" aria-labelledby="set-no">
-            <div class="card-h"><h2 id="set-no">Notifications</h2><div class="spacer"></div><span class="pill ${smtp ? "ok" : "err"}">${smtp ? "Email ready" : "Email not set up"}</span></div>
+            <div class="card-h"><h2 id="set-no" class="ic-h">${hIc("bell", "s4")}Notifications</h2><div class="spacer"></div><span class="pill ${smtp ? "ok" : "err"}">${smtp ? "Email ready" : "Email not set up"}</span></div>
             ${smtp ? "" : `<p class="small muted" style="margin-top:0">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
             <form id="prefs">
               <div class="set-h">Spending</div>
@@ -3057,7 +3069,7 @@
           </section>
 
           <section class="card" aria-labelledby="set-pr">
-            <div class="card-h"><h2 id="set-pr">Profile</h2></div>
+            <div class="card-h"><h2 id="set-pr" class="ic-h">${hIc("user", "s1")}Profile</h2></div>
             <form id="profile" class="stack">
               <label class="field"><span>Name</span><div class="row" style="flex-wrap:nowrap"><input name="name" value="${esc(me.name)}" class="grow"><button class="btn">Save</button></div></label>
               <div class="set-row" style="border:0;padding-bottom:0"><span class="grow"><b>${esc(me.email)}</b><span class="small muted">${me.verified ? "Verified" : "Not verified yet"} · Keel v${esc(state.status.version)}${state.status.released ? ` (${esc(state.status.released)})` : ""}</span></span></div>
@@ -3072,20 +3084,20 @@
 
         <div class="stack">
           <section class="card" aria-labelledby="set-ru">
-            <div class="card-h"><h2 id="set-ru">Categorization rules</h2><div class="spacer"></div><button class="btn sm" id="run-rules">Apply now</button><button class="btn sm primary" id="add-rule">+ Rule</button></div>
+            <div class="card-h"><h2 id="set-ru" class="ic-h">${hIc("tag", "s2")}Categorization rules</h2><div class="spacer"></div><button class="btn sm" id="run-rules">Apply now</button><button class="btn sm primary" id="add-rule">+ Rule</button></div>
             <p class="small muted" style="margin-top:0">A transaction whose description or payee contains the text gets that category. After rules, Keel uses what you've picked by hand for each merchant, then its list of common merchants.</p>
             ${rules.length ? `<div class="rule-list">${rules.map((r) => { const c = catById(r.category); return `<div class="rule"><span class="code">${esc(r.pattern)}</span><span class="muted" aria-hidden="true">→</span><span class="grow">${c ? catLabel(c) : "?"}</span><button class="btn sm danger rule-del" data-id="${r.id}" aria-label="Remove rule ${esc(r.pattern)}">Remove</button></div>`; }).join("")}</div>`
               : `<div class="empty small">No rules yet. When you change a transaction's category, Keel offers to make one.</div>`}
           </section>
           <section class="card" aria-labelledby="set-el">
-            <div class="card-h"><h2 id="set-el">More settings</h2></div>
+            <div class="card-h"><h2 id="set-el" class="ic-h">${hIc("settings", "s1")}More settings</h2></div>
             ${link("#/budget", "budget", "Categories and budgets", "Add, rename or archive categories; set monthly limits")}
             ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV")}
             ${link("#/cashflow", "cashflow", "Low balance warning", floor ? `Warns below ${money(floor)}` : "Not set")}
           </section>
           ${hh ? householdCard(hh, me, smtp) : ""}
           <section class="card" aria-labelledby="set-da">
-            <div class="card-h"><h2 id="set-da">Your data</h2></div>
+            <div class="card-h"><h2 id="set-da" class="ic-h">${hIc("archive", "s3")}Your data</h2></div>
             <div class="data-row">${icon("download")}<span class="grow"><b>Export transactions</b><span class="small muted">A spreadsheet file (CSV) for Excel, Numbers or Google Sheets. A split transaction gets one row per part.</span>
               <span class="row data-act"><select id="exp-range" aria-label="Which transactions"><option value="all">All time</option><option value="ytd">This year</option><option value="last">Last year</option><option value="12m">Last 12 months</option></select><button class="btn" id="exp-csv">Download CSV</button></span></span></div>
             <div class="data-row">${icon("archive")}<span class="grow"><b>Back up everything</b><span class="small muted">Accounts, transactions, budgets, goals, bills, rules and settings in one file. Bank logins aren't included, so keep the file private but know it can't reach your bank.</span>
@@ -3171,7 +3183,7 @@
   // ------------------------------------------------------------------ household (Settings)
   function householdCard(hh, me, smtp) {
     const who = (p) => esc(p.name || p.email);
-    const personRow = (p, tag, btn) => `<div class="hh-row"><span class="av" aria-hidden="true">${esc(((p.name || p.email || "?").trim()[0] || "?").toUpperCase())}</span>
+    const personRow = (p, tag, btn) => `<div class="hh-row"><span class="av" style="--c:var(--s${(hashStr(String(p.email || "").toLowerCase()) % 8) + 1})" aria-hidden="true">${esc(((p.name || p.email || "?").trim()[0] || "?").toUpperCase())}</span>
       <span class="grow"><span class="hh-name"><b>${who(p)}</b>${tag ? `<span class="pill">${tag}</span>` : ""}</span><span class="small muted">${esc(p.email)}</span></span>${btn || ""}</div>`;
     const inviteForm = smtp
       ? `<form id="hh-invite" class="row hh-invite"><input name="email" type="email" required placeholder="Their email address" aria-label="Email address to invite" autocomplete="off"><button class="btn primary">Send invite</button></form>`
@@ -3193,7 +3205,7 @@
       body = `<p class="small muted" style="margin-top:0">Share this budget with a partner or someone you live with. They get their own login and see the same accounts, transactions, budget, goals and bills. Each person keeps their own alerts and theme.</p>
         ${pending}${inviteForm}`;
     }
-    return `<section class="card" aria-labelledby="set-hh"><div class="card-h"><h2 id="set-hh">Household</h2></div>${body}</section>`;
+    return `<section class="card" aria-labelledby="set-hh"><div class="card-h"><h2 id="set-hh" class="ic-h">${hIc("users", "s5")}Household</h2></div>${body}</section>`;
   }
 
   function bindHousehold(view, hh) {
@@ -3377,7 +3389,7 @@
       insecure: `<p class="small muted" style="margin:0">Phones only offer to install apps from a secure (https://) address. Open Keel through your https address to install it. Until then, your browser's menu may offer <b>Add to Home Screen</b> as a shortcut.</p>`,
       unavailable: `<p class="small muted" style="margin:0">Use your browser's menu and choose <b>Install app</b> or <b>Add to Home Screen</b>. If you don't see it, Keel may already be installed.</p>`,
     }[st];
-    return `<div class="card"><div class="card-h"><h2>Install the app</h2><div class="spacer"></div>${st === "installed" ? `<span class="pill ok">Installed</span>` : ""}</div>${body}</div>`;
+    return `<div class="card"><div class="card-h"><h2 class="ic-h">${hIc("download", "s1")}Install the app</h2><div class="spacer"></div>${st === "installed" ? `<span class="pill ok">Installed</span>` : ""}</div>${body}</div>`;
   }
 
   // A one-time, dismissible nudge on the Overview page for phone users.

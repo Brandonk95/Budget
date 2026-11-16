@@ -1429,3 +1429,51 @@ a.card:hover .kpi-ic { transform: rotate(-8deg) scale(1.1); }
   .att li .btn { grid-column: 2; justify-self: start; }
   .att li .att-ic { align-self: start; }
 }
+
+/* ---------------------------------------------------------------- every page: badges, feature tiles, glow, row accents */
+.label.ic-l { display: flex; align-items: center; gap: 8px; }
+.label.ic-l .kpi-ic { width: 26px; height: 26px; border-radius: 8px; }
+.label.ic-l .kpi-ic svg { width: 14px; height: 14px; }
+.kpi { position: relative; overflow: hidden; transition: transform .25s var(--ease-out), box-shadow .25s var(--ease-out), border-color .25s var(--ease); }
+.kpi:hover { transform: translateY(-2px); box-shadow: var(--shadow-hover); }
+.kpi:hover .kpi-ic { transform: rotate(-8deg) scale(1.1); }
+.kpi .value .kpi-ic { display: none; }
+
+/* the lead tile on a page wears a color that matches what it says */
+.card.kpi.feat, .cf-kpis .card.kpi.feat {
+  --tone-a: #2f74ff; --tone-b: #0d47c9; --tone-glow: #6fa0ff;
+  color: #fff; border: 0;
+  background: radial-gradient(80% 110% at 100% 0%, color-mix(in srgb, var(--tone-glow) 55%, transparent) 0%, transparent 60%), linear-gradient(140deg, var(--tone-a), var(--tone-b));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--tone-b) 28%, transparent);
+}
+.card.kpi.feat.tone-good { --tone-a: #13a07a; --tone-b: #0a6650; --tone-glow: #7de8c4; }
+.card.kpi.feat.tone-bad { --tone-a: #d43a4a; --tone-b: #93202d; --tone-glow: #ff8a95; }
+.card.kpi.feat.tone-warn { --tone-a: #d0650e; --tone-b: #9a3412; --tone-glow: #ffb057; }
+.card.kpi.feat::after { content: ""; position: absolute; right: -40px; bottom: -60px; width: 170px; height: 170px; border-radius: 50%; border: 22px solid rgba(255, 255, 255, .07); pointer-events: none; }
+.card.kpi.feat .label, .card.kpi.feat .sub, .card.kpi.feat .muted { color: rgba(255, 255, 255, .8) !important; }
+.card.kpi.feat .value, .card.kpi.feat .value * { color: #fff !important; }
+.card.kpi.feat .sub .pos, .card.kpi.feat .sub .negc, .card.kpi.feat .sub b { color: #fff !important; font-weight: 600; }
+.card.kpi.feat .kpi-ic { color: #fff; background: rgba(255, 255, 255, .2); }
+.card.kpi.feat:hover { box-shadow: 0 16px 34px color-mix(in srgb, var(--tone-b) 36%, transparent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .card.kpi.feat { box-shadow: none; filter: saturate(.9) brightness(.92); } }
+:root[data-theme="dark"] .card.kpi.feat { box-shadow: none; filter: saturate(.9) brightness(.92); }
+
+/* summary cards get a soft wash of color in one corner */
+.card.glow { background: radial-gradient(55% 90% at 100% 0%, color-mix(in srgb, var(--c, var(--primary)) 10%, transparent) 0%, transparent 70%), radial-gradient(40% 70% at 0% 100%, color-mix(in srgb, var(--s3) 6%, transparent) 0%, transparent 70%), var(--surface); }
+
+/* rows you can open get an accent on hover */
+.tx-row, .acc-row, .b-row, .due-line { transition: background-color var(--t) var(--ease), box-shadow var(--t) var(--ease); }
+.tx-row:hover, .acc-row:hover, .b-row.click:hover { box-shadow: inset 3px 0 0 var(--primary); }
+.b-row.click:hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+
+/* goals: each goal in its own color */
+.goal { position: relative; overflow: hidden; }
+.goal::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; background: linear-gradient(90deg, var(--gc, var(--primary)), color-mix(in srgb, var(--gc, var(--primary)) 40%, transparent)); }
+.goal .bar:not(.good) > i { background: linear-gradient(90deg, color-mix(in srgb, var(--gc, var(--primary)) 70%, #fff), var(--gc, var(--primary))); }
+svg.spark { color: var(--s1); }
+.goal svg.spark { color: var(--gc, var(--primary)); }
+
+/* chart bars lift on hover */
+.chart .vbar { transition: filter var(--t) var(--ease); }
+.chart svg:hover .vbar { filter: saturate(1.1); }
+.av[style*="--c"] { color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
