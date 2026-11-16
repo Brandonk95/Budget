@@ -1,5 +1,5 @@
 {
-  "version": "2.14.1",
+  "version": "2.15.0",
   "released": "2026-11-16",
-  "motd": "Fix: on a phone, an account with a long name no longer pushes its balance off the edge of the Accounts page. Long names now wrap onto a second line."
+  "motd": "New in Settings, under Your data: export your transactions as a spreadsheet file (CSV), download a backup of everything in Keel, and restore from a backup on this server or a new one."
 }

@@ -17,7 +17,16 @@ function upsertAccount(app, conn, a) {
   let acc;
   try {
     acc = app.findFirstRecordByFilter("accounts", "connection = {:c} && external_id = {:e}", { c: conn.id, e: a.externalId });
-  } catch (_) {
+  } catch (_) { acc = null; }
+  if (!acc && a.externalId) {
+    // an account restored from a backup comes back unlinked; reconnecting the bank picks it up
+    // again (with its history) instead of making a duplicate
+    try {
+      acc = app.findFirstRecordByFilter("accounts", "user = {:u} && connection = '' && external_id = {:e}", { u: conn.getString("user"), e: a.externalId });
+      acc.set("connection", conn.id);
+    } catch (_) { acc = null; }
+  }
+  if (!acc) {
     acc = new Record(app.findCollectionByNameOrId("accounts"));
     acc.set("user", conn.getString("user"));
     acc.set("connection", conn.id);

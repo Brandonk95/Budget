@@ -1089,3 +1089,14 @@ a.card:hover, .card.click:hover, .goal[data-id]:hover { transform: translateY(-2
 .acc-list { grid-template-columns: minmax(0, 1fr); }
 .acc-row .t-name { white-space: normal; overflow-wrap: anywhere; }
 .acc-row > .right { flex: none; }
+
+/* Settings > Your data */
+.data-row { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.data-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.data-row > svg { flex: none; width: 20px; height: 20px; margin-top: 2px; color: var(--muted); }
+.data-row .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.data-act { margin-top: 10px; gap: 8px; flex-wrap: wrap; }
+.data-act select { width: auto; min-width: 150px; }
+.restore-list { list-style: none; padding: 0; margin: 0 0 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+.restore-list li { color: var(--muted); } .restore-list b { color: var(--text); margin-right: 4px; }
+.callout.warn { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); margin-bottom: 4px; }

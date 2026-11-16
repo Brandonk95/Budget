@@ -221,6 +221,42 @@ routerAdd("POST", "/api/budget/import", (e) => {
   return e.json(200, { inserted, skipped, invalid });
 }, $apis.requireAuth("users"));
 
+// Your data: transactions as CSV, a full backup, and restoring one.
+routerAdd("GET", "/api/budget/export/transactions", (e) => {
+  const backup = require(`${__hooks}/lib/backup.js`);
+  const q = e.request.url.query();
+  const out = backup.transactionsCsv(e.app, e.auth.id, q.get("from"), q.get("to"));
+  const h = e.response.header();
+  h.set("Content-Type", "text/csv; charset=utf-8");
+  h.set("Content-Disposition", `attachment; filename="keel-transactions-${new Date().toISOString().slice(0, 10)}.csv"`);
+  h.set("Cache-Control", "no-store");
+  h.set("X-Rows", String(out.rows));
+  return e.string(200, out.csv);
+}, $apis.requireAuth("users"));
+
+routerAdd("GET", "/api/budget/backup", (e) => {
+  const backup = require(`${__hooks}/lib/backup.js`);
+  const data = backup.backup(e.app, e.auth.id);
+  try { data.version = require(`${__hooks}/lib/release.js`).info().version; } catch (_) {}
+  const h = e.response.header();
+  h.set("Content-Disposition", `attachment; filename="keel-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  h.set("Cache-Control", "no-store");
+  return e.json(200, data);
+}, $apis.requireAuth("users"));
+
+// Replaces all of your data with the backup's. The browser asks first and sends confirm: true.
+routerAdd("POST", "/api/budget/restore", (e) => {
+  const util = require(`${__hooks}/lib/util.js`);
+  const backup = require(`${__hooks}/lib/backup.js`);
+  const body = e.requestInfo().body || {};
+  if (body.confirm !== true) throw new BadRequestError("Restoring replaces all your data; confirm first.");
+  try {
+    return e.json(200, { restored: backup.restore(e.app, e.auth.id, body.backup) });
+  } catch (err) {
+    throw new BadRequestError(util.errMsg(err));
+  }
+}, $apis.requireAuth("users"));
+
 routerAdd("POST", "/api/budget/apply-rules", (e) => {
   const rules = require(`${__hooks}/lib/rules.js`);
   return e.json(200, { updated: rules.applyToUncategorized(e.app, e.auth.id) });

@@ -18,6 +18,7 @@
 - **Automatic updates**: Watchtower checks for a new image every 5 minutes. Signed-in users see a "what's new" popup in the top-right corner, which they can turn off in Settings.
 - **Installable app** for phones and desktops: home-screen icon, full-screen window, opens offline.
 - **Calm, accessible design**: Keel Blue on cool neutrals, the Inter typeface, Lucide icons, a dark mode of its own, a phone layout with a bottom bar, and reduced-motion support.
+- **Export and backup**: download transactions as a CSV for any spreadsheet, or everything in one backup file you can restore on this server or a new one.
 - **Email over SMTP**: alerts when a budget passes your warning threshold or goes over it, large transactions, possible double charges, a subscription price going up, a yearly renewal a week out, and your paycheck arriving. Also a failed-sync notice, a weekly summary, a monthly report, and password reset and verification emails. Each one can be turned off in Settings.
 
 ## Install
@@ -88,6 +89,16 @@ New synced accounts start like this: checking and credit accounts count toward y
 ### CSV import
 
 Go to **Accounts → Import CSV**, pick the account, then map the date, description and amount columns. The amount can be a single column or separate debit and credit columns. Re-importing the same file skips rows that are already there.
+
+### Export, backup and restore
+
+**Settings → Your data** has three tools:
+
+- **Export transactions** downloads a CSV (all time, this year, last year or the last 12 months). A split transaction gets one row per part, so totals by category add up.
+- **Download backup** saves everything as one JSON file: settings, categories, accounts, transactions and splits, rules, goals, bills and subscriptions, and balance history. Bank-connection secrets are left out on purpose.
+- **Restore a backup** replaces all of your data with the file's, in a single step that changes nothing if the file is bad. Accounts from a bank you're still connected to stay linked. On a new server, reconnect the bank afterwards: its accounts are matched to the restored ones, with their history, instead of being added again.
+
+PocketBase's own admin backups (`/_/` → Settings → Backups) still cover the whole server, all users included.
 
 ## Automatic updates and releases
 

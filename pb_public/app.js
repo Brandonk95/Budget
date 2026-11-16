@@ -80,6 +80,9 @@
 
   // Lucide icons (lucide.dev, ISC license), inlined so there's no extra download.
   const ICONS = {
+    download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+    archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+    upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
     dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
     budget: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
     spending: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
@@ -2835,6 +2838,15 @@
             ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV")}
             ${link("#/cashflow", "cashflow", "Low balance warning", me.cash_floor ? `Warns below ${money(me.cash_floor)}` : "Not set")}
           </section>
+          <section class="card" aria-labelledby="set-da">
+            <div class="card-h"><h2 id="set-da">Your data</h2></div>
+            <div class="data-row">${icon("download")}<span class="grow"><b>Export transactions</b><span class="small muted">A spreadsheet file (CSV) for Excel, Numbers or Google Sheets. A split transaction gets one row per part.</span>
+              <span class="row data-act"><select id="exp-range" aria-label="Which transactions"><option value="all">All time</option><option value="ytd">This year</option><option value="last">Last year</option><option value="12m">Last 12 months</option></select><button class="btn" id="exp-csv">Download CSV</button></span></span></div>
+            <div class="data-row">${icon("archive")}<span class="grow"><b>Back up everything</b><span class="small muted">Accounts, transactions, budgets, goals, bills, rules and settings in one file. Bank logins aren't included, so keep the file private but know it can't reach your bank.</span>
+              <span class="row data-act"><button class="btn" id="bk-dl">Download backup</button></span></span></div>
+            <div class="data-row">${icon("upload")}<span class="grow"><b>Restore a backup</b><span class="small muted">Replaces everything here with what's in a backup file. Moving to a new server? Restore, then reconnect your bank and its accounts pick up where they left off.</span>
+              <span class="row data-act"><button class="btn" id="bk-restore">Choose a backup file…</button><input type="file" id="bk-file" accept=".json,application/json" hidden></span></span></div>
+          </section>
           ${installCard()}
         </div>
       </div>`;
@@ -2875,11 +2887,77 @@
     const rp = $("#reset-pw"); if (rp) rp.onclick = async () => { try { await pb.collection("users").requestPasswordReset(me.email); toast("Reset link sent"); } catch (err) { fail(err); } };
     const vf = $("#verify"); if (vf) vf.onclick = async () => { try { await pb.collection("users").requestVerification(me.email); toast("Verification email sent"); } catch (err) { fail(err); } };
     $("#add-rule").onclick = () => createRuleDialog("", "");
+    $("#exp-csv").onclick = async (e) => {
+      const btn = e.currentTarget, y = new Date().getFullYear(), q = {};
+      const r = $("#exp-range").value;
+      if (r === "ytd") q.from = `${y}-01-01`;
+      else if (r === "last") { q.from = `${y - 1}-01-01`; q.to = `${y - 1}-12-31`; }
+      else if (r === "12m") { const d = new Date(); d.setFullYear(d.getFullYear() - 1); d.setDate(d.getDate() + 1); q.from = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+      btn.classList.add("loading");
+      try {
+        const res = await download("/api/budget/export/transactions?" + new URLSearchParams(q), "keel-transactions.csv");
+        const n = Number(res.headers.get("X-Rows"));
+        toast(isFinite(n) ? `Exported ${plural(n, "row")}` : "Exported");
+      } catch (err) { fail(err); } finally { btn.classList.remove("loading"); }
+    };
+    $("#bk-dl").onclick = async (e) => {
+      const btn = e.currentTarget; btn.classList.add("loading");
+      try { await download("/api/budget/backup", "keel-backup.json"); toast("Backup downloaded"); } catch (err) { fail(err); } finally { btn.classList.remove("loading"); }
+    };
+    const file = $("#bk-file");
+    $("#bk-restore").onclick = () => { file.value = ""; file.click(); };
+    file.onchange = async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      let data;
+      try { data = JSON.parse(await f.text()); } catch (_) { data = null; }
+      if (!data || data.app !== "keel" || typeof data.format !== "number") { fail(new Error("That file isn't a Keel backup.")); return; }
+      restoreDialog(data, me);
+    };
     $("#run-rules").onclick = async () => { try { const r = await api("/api/budget/apply-rules", { method: "POST" }); toast(`Categorized ${plural(r.updated, "transaction")}`); } catch (err) { fail(err); } };
     $$(".rule-del", view).forEach((b) => (b.onclick = async () => {
       if (!(await confirmBox(`Remove the rule for “${b.closest(".rule").querySelector(".code").textContent}”? Transactions it already filed keep their category.`, "Remove rule"))) return;
       try { await pb.collection("rules").delete(b.dataset.id); toast("Rule removed"); route(); } catch (err) { fail(err); }
     }));
+  }
+
+  // Fetch a file from the API (with your sign-in) and hand it to the browser as a download.
+  async function download(path, fallbackName) {
+    const url = typeof pb.buildURL === "function" ? pb.buildURL(path) : path;
+    const res = await fetch(url, { headers: { Authorization: pb.authStore.token }, cache: "no-store" });
+    if (!res.ok) { let msg = "Download failed"; try { msg = (await res.json()).message || msg; } catch (_) {} throw new Error(msg); }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const name = (/filename="([^"]+)"/.exec(cd) || [])[1] || fallbackName;
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name; a.style.display = "none";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    return res;
+  }
+
+  function restoreDialog(data, me) {
+    const n = (k) => (Array.isArray(data[k]) ? data[k].length : 0);
+    const when = data.exported ? new Date(data.exported) : null;
+    const items = [[n("transactions"), "transaction"], [n("accounts"), "account"], [n("categories"), "category", "categories"], [n("goals"), "goal"], [n("recurring"), "bill or subscription", "bills and subscriptions"], [n("rules"), "rule"]];
+    modal("Restore this backup?", `
+      <p class="muted" style="margin-top:0">Made ${when && !isNaN(when) ? esc(when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })) : "at an unknown time"}${data.version ? ` with Keel v${esc(data.version)}` : ""}.</p>
+      <ul class="restore-list">${items.map(([c, one, many]) => `<li><b class="num">${c.toLocaleString()}</b> ${esc(c === 1 ? one : (many || one + "s"))}</li>`).join("")}</ul>
+      <div class="callout warn small">This replaces everything in Keel for ${esc(me.email)}: transactions, budgets, goals, bills and settings. It can't be undone, so download a backup of what's here now if you might want it back.</div>
+      <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn link" id="rs-save">Back up what's here first</button><div class="spacer"></div><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn danger solid" id="rs-go">Replace my data</button></div>`, {
+      onMount: (m, close) => {
+        $("#rs-save", m).onclick = async (e) => { const b = e.currentTarget; b.classList.add("loading"); try { await download("/api/budget/backup", "keel-backup.json"); toast("Backup downloaded"); } catch (err) { fail(err); } finally { b.classList.remove("loading"); } };
+        $("#rs-go", m).onclick = async (e) => {
+          const b = e.currentTarget; b.classList.add("loading"); b.disabled = true;
+          try {
+            const r = await api("/api/budget/restore", { method: "POST", body: { confirm: true, backup: data } });
+            close();
+            toast(`Restored ${plural(r.restored.transactions || 0, "transaction")}`);
+            setTimeout(() => location.reload(), 900); // start fresh with the restored categories, accounts and settings
+          } catch (err) { b.classList.remove("loading"); b.disabled = false; fail(err); }
+        };
+      },
+    });
   }
 
   // ------------------------------------------------------------------ update notes
