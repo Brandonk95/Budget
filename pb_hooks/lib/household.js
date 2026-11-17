@@ -66,7 +66,7 @@ function invite(app, user, email) {
   const sent = notify.send(app, email, `${who} invited you to share a budget on ${meta.appName}`, notify.layout(app, "You're invited",
     `<p style="margin:0 0 12px">${util.esc(who)} (${util.esc(user.getString("email"))}) wants to share their ${util.esc(meta.appName)} budget with you: the same accounts, transactions, budget, goals and bills, with your own login.</p>
      <p style="margin:0;color:#5f6b80;font-size:14px">The link works once and expires in ${INVITE_DAYS} days. Sign up or sign in with this email address (${util.esc(email)}) to accept.</p>`,
-    { button: { label: "Join the household", href: link }, footer: "If you weren't expecting this, you can ignore it." }));
+    { tone: "blue", icon: "🏠", kicker: "Shared budget", button: { label: "Join the household", href: link }, footer: "If you weren't expecting this, you can ignore it." }));
   if (!sent) { app.delete(rec); throw new Error("The invite email couldn't be sent. Check the server's SMTP settings."); }
   return { id: rec.id, email, expires: rec.getString("expires") };
 }
@@ -117,7 +117,8 @@ function join(app, user, token) {
     const notify = require(`${__hooks}/lib/notify.js`);
     const who = user.getString("name") || user.getString("email");
     notify.send(app, owner.getString("email"), `${who} joined your household`, notify.layout(app, "Your budget is shared",
-      `<p style="margin:0">${util.esc(who)} accepted your invite and now shares your budget. You can remove them any time under Settings.</p>`));
+      `<p style="margin:0">${util.esc(who)} accepted your invite and now shares your budget. You can remove them any time under Settings.</p>`,
+      { tone: "green", icon: "🎉", kicker: "Household" }));
   } catch (_) {}
   return info(app, user);
 }

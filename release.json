@@ -1,5 +1,5 @@
 {
-  "version": "2.16.6",
-  "released": "2026-11-16",
-  "motd": "A livelier Settings page: a banner with you and your setup, the theme picked from little previews, and a colored icon on each alert that dims when it's off."
+  "version": "2.16.7",
+  "released": "2026-11-17",
+  "motd": "Livelier emails: every alert and summary has a colored header with its headline number, progress bars for your budgets, and tips in their own boxes."
 }

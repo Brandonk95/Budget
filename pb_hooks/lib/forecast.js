@@ -126,10 +126,11 @@ function lowBalanceAlert(app, user) {
   const upcoming = f.points.filter((p) => p.day <= f.below_floor_day).flatMap((p) => p.events.map((e) => Object.assign({}, e, { day: p.day }))).filter((e) => e.kind !== "income").slice(0, 8);
   const rows = upcoming.map((e) => `<tr><td style="padding:6px 0;border-bottom:1px solid #eef1f5">${util.esc(e.name)}</td><td style="padding:6px 0;border-bottom:1px solid #eef1f5;color:#5f6b80">${pretty(e.day)}</td><td style="padding:6px 0;border-bottom:1px solid #eef1f5;text-align:right">${util.money(Math.abs(e.amount))}</td></tr>`).join("");
   notify.send(app, user.getString("email"), "Checking may run low",
-    notify.layout(app, "Checking may run low", `<p>Your checking balance is projected to drop to <b>${util.money(pt.balance)}</b> around <b>${pretty(f.below_floor_day)}</b>, below your ${util.money(f.floor)} warning level.</p>
-      ${f.next_income ? `<p>Your next expected deposit is ${util.esc(f.next_income.name)} (${util.money(f.next_income.amount)}) on ${pretty(f.next_income.day)}.</p>` : ""}
-      ${rows ? `<p style="margin-bottom:4px">Coming out before then:</p><table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>` : ""}
-      <p style="color:#5f6b80;font-size:13px">This assumes about ${util.money(f.spend_per_day)} a day of everyday spending, your usual rate.</p>`));
+    notify.layout(app, "Checking may run low", `<p style="margin:0">That's below your ${util.money(f.floor)} warning level.</p>
+      ${f.next_income ? notify.callout(`Your next expected deposit is <b>${util.esc(f.next_income.name)}</b> (${util.money(f.next_income.amount)}) on ${pretty(f.next_income.day)}.`, "green", "💰") : ""}
+      ${rows ? `<p style="margin:18px 0 4px;font-weight:700">Coming out before then</p><table style="width:100%;border-collapse:collapse;font-size:14px">${rows}</table>` : ""}
+      <p style="color:#5f6b80;font-size:13px">This assumes about ${util.money(f.spend_per_day)} a day of everyday spending, your usual rate.</p>`,
+    { tone: "red", icon: "📉", kicker: "Cash flow", stat: util.money(pt.balance), statLabel: `projected in checking around ${pretty(f.below_floor_day)}`, button: { label: "Open Cash flow", href: `${app.settings().meta.appURL}/#/cashflow` } }));
   return true;
 }
 

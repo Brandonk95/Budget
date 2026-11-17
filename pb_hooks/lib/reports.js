@@ -186,13 +186,18 @@ function monthlyEmail(app, user, force) {
   const movers = rep.up.concat(rep.down).map((c) => notify.row([util.esc(c.name), util.money(c.total), `<span style="color:${c.change > 0 ? "#c93d48" : "#0f7a52"}">${sign(c.change)}</span>`]));
   const merch = rep.merchants.slice(0, 5).map((m) => notify.row([util.esc(m.name), `${m.count}×`, util.money(m.total)]));
   const url = app.settings().meta.appURL;
+  const T = notify.TONES;
   const html = notify.layout(app, `${label} in review`, `
-    <p>You brought in <b>${util.money(rep.income)}</b> and spent <b>${util.money(rep.spent)}</b>${rep.income > 0 ? `, so you ${rep.net >= 0 ? "kept" : "were short"} <b>${util.money(Math.abs(rep.net))}</b>${rep.savings_rate != null && rep.net > 0 ? ` (${rep.savings_rate}% of income)` : ""}` : ""}.</p>
-    ${diff != null ? `<p>That's ${util.money(Math.abs(diff))} ${diff > 0 ? "more" : "less"} spending than the month before.</p>` : ""}
-    ${movers.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Biggest changes</h3><p style="margin:0 0 6px;color:#5f6b80;font-size:13px">Compared with your ${rep.compare_months}-month average</p>${notify.table(movers)}` : ""}
-    ${merch.length ? `<h3 style="font-size:15px;margin:20px 0 6px">Where it went</h3>${notify.table(merch)}` : ""}
-    ${rep.subscriptions.total ? `<p>Subscriptions cost <b>${util.money(rep.subscriptions.total)}</b> this month.</p>` : ""}`,
-    { button: { label: "See the full report", href: `${url}/#/reports` } });
+    ${notify.stats([
+      { label: "Income", value: util.money(rep.income), color: T.green[3] },
+      rep.income > 0 ? { label: rep.net >= 0 ? "Kept" : "Short", value: util.money(Math.abs(rep.net)), color: rep.net >= 0 ? T.green[3] : T.red[3] } : null,
+      rep.savings_rate != null && rep.net > 0 ? { label: "Saved", value: `${rep.savings_rate}%`, sub: "of income", color: T.blue[3] } : null,
+    ])}
+    ${diff != null ? notify.callout(`That's <b>${util.money(Math.abs(diff))} ${diff > 0 ? "more" : "less"}</b> spending than the month before.`, diff > 0 ? "amber" : "green", diff > 0 ? "📈" : "🎉") : ""}
+    ${movers.length ? `${notify.section("🔀", "Biggest changes")}<p style="margin:0 0 2px;color:#5f6b80;font-size:13px">Compared with your ${rep.compare_months}-month average</p>${notify.table(movers)}` : ""}
+    ${merch.length ? `${notify.section("🛍️", "Where it went")}${notify.table(merch)}` : ""}
+    ${rep.subscriptions.total ? notify.callout(`Subscriptions cost <b>${util.money(rep.subscriptions.total)}</b> this month.`, "purple", "🔁") : ""}`,
+    { tone: rep.income > 0 && rep.net < 0 ? "blue" : "green", icon: "📅", kicker: "Monthly report", stat: util.money(rep.spent), statLabel: `spent in ${label}`, button: { label: "See the full report", href: `${url}/#/reports` } });
   return notify.send(app, user.getString("email"), `${label}: ${util.money(rep.spent)} spent${rep.savings_rate != null && rep.net > 0 ? `, ${rep.savings_rate}% saved` : ""}`, html);
 }
 

@@ -41,9 +41,10 @@ function duplicates(app, user, created) {
     util.esc(nameOf(t)), `${pretty(twin.getString("date"))} and ${pretty(t.getString("date"))}`, util.money(Math.abs(t.getFloat("amount"))),
   ]));
   const subject = found.length === 1 ? `Possible double charge at ${nameOf(found[0].t)}` : `${found.length} possible double charges`;
-  notify.send(app, user.getString("email"), subject, notify.layout(app, "Possible double charge",
-    `<p>${found.length === 1 ? "This merchant charged" : "These merchants charged"} the same amount twice within two days:</p>${notify.table(rows)}
-     <p>That can be completely normal, like two trips to the same store. If you only bought once, check with the merchant or your bank.</p>`));
+  notify.send(app, user.getString("email"), subject, notify.layout(app, found.length === 1 ? "Possible double charge" : "Possible double charges",
+    `<p style="margin:0 0 4px">${found.length === 1 ? "This merchant charged" : "These merchants charged"} the same amount twice within two days:</p>${notify.table(rows)}
+     ${notify.callout("That can be completely normal, like two trips to the same store. If you only bought once, check with the merchant or your bank.", "amber", "🤔")}`,
+    { tone: "amber", icon: "👀", kicker: "Double charge?", button: { label: "Check transactions", href: `${app.settings().meta.appURL}/#/transactions` } }));
   return found.length;
 }
 
@@ -60,9 +61,11 @@ function priceIncreases(app, user) {
   const rows = ups.map((s) => notify.row([util.esc(s.name), `${util.money(s.price_change.from)} → <b>${util.money(s.price_change.to)}</b>`,
     `+${util.money((s.price_change.to - s.price_change.from) * (PER_YEAR[s.frequency] || 12))}/yr`]));
   const subject = ups.length === 1 ? `${ups[0].name} went up to ${util.money(ups[0].price_change.to)}` : `${ups.length} subscriptions went up`;
-  notify.send(app, user.getString("email"), subject, notify.layout(app, "A subscription price went up",
-    `<p>${ups.length === 1 ? "This subscription charged" : "These subscriptions charged"} more than last time:</p>${notify.table(rows)}
-     <p>If it's not worth the new price, now's a good time to cancel or switch plans.</p>`));
+  const perYear = ups.reduce((sum, s) => sum + (s.price_change.to - s.price_change.from) * (PER_YEAR[s.frequency] || 12), 0);
+  notify.send(app, user.getString("email"), subject, notify.layout(app, ups.length === 1 ? "A subscription price went up" : "Subscription prices went up",
+    `<p style="margin:0 0 4px">${ups.length === 1 ? "This subscription charged" : "These subscriptions charged"} more than last time:</p>${notify.table(rows)}
+     ${notify.callout("If it's not worth the new price, now's a good time to cancel or switch plans.", "blue", "✂️")}`,
+    { tone: "amber", icon: "📈", kicker: "Price increase", stat: `+${util.money(perYear)}`, statLabel: "more a year", button: { label: "See subscriptions", href: `${app.settings().meta.appURL}/#/subscriptions` } }));
   return ups.length;
 }
 
@@ -85,9 +88,11 @@ function renewals(app, user) {
   if (!due.length) return 0;
   const rows = due.map(({ it, next, n }) => notify.row([util.esc(it.name), `${pretty(next)} (in ${n} days)`, util.money(it.amount)]));
   const subject = due.length === 1 ? `${due[0].it.name} renews in ${due[0].n} days (${util.money(due[0].it.amount)})` : `${due.length} renewals next week`;
+  const total = due.reduce((sum, d) => sum + d.it.amount, 0);
   notify.send(app, user.getString("email"), subject, notify.layout(app, "Renewing next week",
-    `<p>${due.length === 1 ? `This ${due[0].it.frequency} charge is` : "These charges are"} coming up:</p>${notify.table(rows)}
-     <p>Still using it? If not, cancel before it renews.</p>`));
+    `<p style="margin:0 0 4px">${due.length === 1 ? `This ${due[0].it.frequency} charge is` : "These charges are"} coming up:</p>${notify.table(rows)}
+     ${notify.callout("Still using it? If not, cancel before it renews.", "blue", "✂️")}`,
+    { tone: "purple", icon: "🔁", kicker: "Renewal coming up", stat: util.money(total), statLabel: due.length === 1 ? util.esc(due[0].it.name) : `across ${due.length} renewals`, button: { label: "See what's recurring", href: `${app.settings().meta.appURL}/#/recurring` } }));
   return due.length;
 }
 
@@ -107,11 +112,15 @@ function paychecks(app, user, created) {
   let left = "";
   try {
     const d = require(`${__hooks}/lib/insights.js`).compute(app, require(`${__hooks}/lib/household.js`).ownerId(user), util.currentMonth());
-    if (d.budgeted > 0) left = `<p>You have <b>${util.money(Math.max(0, d.budgeted - d.spent))}</b> left to spend this month, about <b>${util.money(d.safe_per_day)} a day</b> for the next ${d.remaining_days} days.</p>`;
+    if (d.budgeted > 0) left = notify.stats([
+      { label: "Left to spend", value: util.money(Math.max(0, d.budgeted - d.spent)), sub: "this month" },
+      { label: "Safe per day", value: util.money(d.safe_per_day), sub: `for ${d.remaining_days} days`, color: notify.TONES.blue[3] },
+    ]);
   } catch (_) {}
   const rows = landed.map((t) => notify.row([util.esc(sources[recurring.normalizePayee(nameOf(t))]), pretty(t.getString("date")), `<span style="color:#0f7a52">+${util.money(t.getFloat("amount"))}</span>`]));
   const subject = `Your paycheck arrived: +${util.money(total)}`;
-  notify.send(app, user.getString("email"), subject, notify.layout(app, "Your paycheck arrived", `${notify.table(rows)}${left}`));
+  notify.send(app, user.getString("email"), subject, notify.layout(app, "Your paycheck arrived", `${notify.table(rows)}${left ? `<div style="margin-top:14px">${left}</div>` : ""}`,
+    { tone: "green", icon: "💰", kicker: "Payday", stat: `+${util.money(total)}`, statLabel: "just landed" }));
   return landed.length;
 }
 
