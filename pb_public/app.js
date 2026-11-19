@@ -151,6 +151,7 @@
     settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
@@ -1013,13 +1014,30 @@
   const dueText = (n) => (n < 0 ? `${-n} day${n === -1 ? "" : "s"} late` : n === 0 ? "Today" : n === 1 ? "Tomorrow" : `In ${n} days`);
   function barClass(pct) { return pct == null ? "" : pct > 100 ? "bad" : pct >= 85 ? "warn" : ""; }
 
+  // the stand-in for a charge the bank's balance shows but its transaction list doesn't yet
+  const estAv = `<span class="av est-av" aria-hidden="true">${icon("clock")}</span>`;
+  function estInfo(tx) {
+    const acc = accById(tx.account);
+    modal(tx.amount < 0 ? "Pending charge" : "Pending deposit", `
+      <p class="est-big num ${tx.amount > 0 ? "pos" : ""}">${tx.amount > 0 ? "+" : "−"}${money(Math.abs(tx.amount))}</p>
+      <p>${acc ? `Your <b>${esc(acctLabel(acc))}</b> balance` : "Your balance"} changed by this much, but the bank hasn't listed the transaction yet. That usually takes a day or two.</p>
+      <p class="small muted">When the real transaction shows up, Keel swaps this out for it. If it turns out to be a few smaller ones, this shrinks as each one arrives. Until then it counts toward this month's spending so what's left stays accurate.</p>
+      <div class="actions"><button class="btn" id="est-x">Dismiss it</button><button class="btn primary" data-close>Got it</button></div>`, {
+      onMount: (m, close) => {
+        $("#est-x", m).onclick = async () => {
+          try { await pb.collection("transactions").delete(tx.id); close(); toast("Dismissed"); route(); } catch (err) { fail(err); }
+        };
+      },
+    });
+  }
+
   function txLine(t) {
     const c = catById(t.category);
     const acc = accById(t.account);
-    return `<div class="tx-line click" data-id="${t.id}">
-      ${avatar(t.payee || t.description, c)}
-      <div class="grow"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
-        <div class="small muted">${t.split ? `Split · ${esc(c ? c.name : "Uncategorized")} and more` : esc(c ? c.name : "Uncategorized")}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
+    return `<div class="tx-line click${t.estimated ? " est" : ""}" data-id="${t.id}">
+      ${t.estimated ? estAv : avatar(t.payee || t.description, c)}
+      <div class="grow"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.estimated ? ' <span class="pill est-p">estimate</span>' : t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
+        <div class="small muted">${t.estimated ? "Waiting on the bank" : t.split ? `Split · ${esc(c ? c.name : "Uncategorized")} and more` : esc(c ? c.name : "Uncategorized")}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
       <div class="right"><div class="num ${t.amount > 0 ? "pos" : ""}">${t.amount > 0 ? "+" : "−"}${money(Math.abs(t.amount))}</div><div class="small muted">${prettyDate(t.date)}</div></div>
     </div>`;
   }
@@ -1746,11 +1764,11 @@
     const acc = accById(t.account);
     const catName = c ? c.name : "Uncategorized";
     const inflow = t.amount > 0;
-    return `<div class="tx-row click" data-id="${t.id}" role="button" tabindex="0">
-      ${avatar(t.payee || t.description, c)}
-      <div class="tx-m"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
-        <div class="small muted tx-sub">${t.split ? `Split · ${esc(catName)} and more` : esc(catName)}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
-      <div class="tx-c">${t.split ? `<span class="cl">${catMark(c, true)}<span>${esc(catName)} <span class="muted">+ split</span></span></span>` : catLabel(c)}</div>
+    return `<div class="tx-row click${t.estimated ? " est" : ""}" data-id="${t.id}" role="button" tabindex="0">
+      ${t.estimated ? estAv : avatar(t.payee || t.description, c)}
+      <div class="tx-m"><div class="t-name">${esc(t.payee || t.description || "Transaction")}${t.estimated ? ' <span class="pill est-p">estimate</span>' : t.pending ? ' <span class="pill">pending</span>' : ""}${t.exclude ? ' <span class="pill">excluded</span>' : ""}</div>
+        <div class="small muted tx-sub">${t.estimated ? "Waiting on the bank" : t.split ? `Split · ${esc(catName)} and more` : esc(catName)}${acc && state.accounts.length > 1 ? " · " + esc(acctLabel(acc)) : ""}</div></div>
+      <div class="tx-c">${t.estimated ? '<span class="muted small">Waiting on the bank</span>' : t.split ? `<span class="cl">${catMark(c, true)}<span>${esc(catName)} <span class="muted">+ split</span></span></span>` : catLabel(c)}</div>
       <div class="tx-a small muted">${acc ? esc(acctLabel(acc)) : ""}</div>
       <div class="tx-amt num ${inflow ? "pos" : ""}">${inflow ? "+" : "−"}${money(Math.abs(t.amount))}${inflow ? '<span class="sr-only"> in</span>' : '<span class="sr-only"> out</span>'}</div>
     </div>`;
@@ -1882,6 +1900,7 @@
   }
 
   function editTx(tx) {
+    if (tx && tx.estimated) return estInfo(tx);
     const isNew = !tx;
     const manual = isNew || (tx.external_id || "").startsWith("csv:") || !tx.external_id;
     tx = tx || { date: ymd(new Date()), amount: "", account: state.accounts[0] && state.accounts[0].id, category: "" };

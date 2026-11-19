@@ -13,6 +13,7 @@ function guessType(name) {
 }
 
 // a: { externalId, name, institution, type, currency, balance, available, balanceDate }
+// a.prev, if given, gets { balance } of the account before this update (null for a new account).
 function upsertAccount(app, conn, a) {
   let acc;
   try {
@@ -26,6 +27,7 @@ function upsertAccount(app, conn, a) {
       acc.set("connection", conn.id);
     } catch (_) { acc = null; }
   }
+  if (a.prev) a.prev.balance = acc && !acc.isNew() ? acc.getFloat("balance") : null;
   if (!acc) {
     acc = new Record(app.findCollectionByNameOrId("accounts"));
     acc.set("user", conn.getString("user"));
@@ -47,7 +49,12 @@ function upsertAccount(app, conn, a) {
 
 // txs: [{ externalId, date: "YYYY-MM-DD 12:00:00.000Z", amount, description, payee, pending, hint }]
 // windowStart: stored-date string; pending rows in the window that vanished get removed.
-function upsertTransactions(app, acc, txs, windowStart, ctx) {
+// track, if given, gets how much the account's transactions moved: .all (every row) and
+// .posted (pending rows count as 0), for the estimated pending charge below.
+function upsertTransactions(app, acc, txs, windowStart, ctx, track) {
+  track = track || {};
+  track.all = 0; track.posted = 0;
+  const counts = (amt, pending) => { track.all += amt; if (!pending) track.posted += amt; };
   const rules = require(`${__hooks}/lib/rules.js`);
   const col = app.findCollectionByNameOrId("transactions");
   const flip = acc.getBool("flip_amounts") ? -1 : 1;
@@ -67,6 +74,8 @@ function upsertTransactions(app, acc, txs, windowStart, ctx) {
 
     if (tx) {
       // keep the user's category/notes/payee edits; refresh bank-owned fields
+      counts(-tx.getFloat("amount"), tx.getBool("pending"));
+      counts(amount, !!t.pending);
       tx.set("amount", amount);
       tx.set("pending", !!t.pending);
       tx.set("date", t.date);
@@ -86,6 +95,7 @@ function upsertTransactions(app, acc, txs, windowStart, ctx) {
     tx.set("category", rules.categorize(ctx, { description: desc, payee, amount, hint: t.hint }));
     app.save(tx);
     created.push(tx);
+    counts(amount, !!t.pending);
   }
 
   // Pending items often get a new id once they post; drop stale pending rows in the window.
@@ -93,9 +103,75 @@ function upsertTransactions(app, acc, txs, windowStart, ctx) {
     "transactions", "account = {:a} && pending = true && date >= {:s}", "", 0, 0, { a: acc.id, s: windowStart },
   );
   for (const s of stale) {
-    if (!seen[s.getString("external_id")]) app.delete(s);
+    if (s.getBool("estimated") || seen[s.getString("external_id")]) continue;
+    counts(-s.getFloat("amount"), true);
+    app.delete(s);
   }
   return created;
+}
+
+// ---- estimated pending charge
+// Banks often move the balance a day or two before the transaction itself comes through. Each
+// sync, the part of the balance change that the transactions don't account for is added to a
+// running gap; the gap shows as one "pending" transaction on the account. As the real
+// transactions arrive they account for the balance change instead, so the gap shrinks by their
+// amounts (a $40 estimate becomes $20 when the first of two $20 charges shows up, and goes away
+// with the second). Some banks count pending charges in the balance and some don't, so two gaps
+// are kept, one for each, and the smaller one is shown.
+const EST_ID = "keel:estimate";
+const EST_MAX_DAYS = 7; // a gap nothing has explained in a week is dropped
+
+// A gap only starts (or flips sign) from a real move in the balance, and only by as much as the
+// balance moved: transactions turning up with no balance change just mean the balance already had
+// them (an old charge, or one an estimate was dismissed for), so they don't make a new estimate.
+function settle(prev, next, dBal) {
+  if (Math.abs(next) < 0.01) return 0;
+  if (Math.abs(prev) >= 0.01 && Math.sign(next) === Math.sign(prev)) return next;
+  if (Math.sign(next) === Math.sign(dBal)) return util.round2(Math.sign(next) * Math.min(Math.abs(next), Math.abs(dBal)));
+  return 0;
+}
+
+function updateEstimate(app, acc, prevBalance, track, fresh) {
+  // "Invert amounts" banks don't say which way their balance moves, so they don't get estimates
+  const flip = 1;
+  const off = acc.getBool("flip_amounts");
+  let ph = null;
+  try { ph = app.findFirstRecordByFilter("transactions", "account = {:a} && external_id = {:e}", { a: acc.id, e: EST_ID }); } catch (_) {}
+  let gA = acc.getFloat("est_gap_a"), gB = acc.getFloat("est_gap_b");
+  // the stand-in was deleted by hand, or it's too old, or there's nothing to compare with: start over
+  const dismissed = acc.getBool("est_shown") && !ph;
+  const stale = ph && Date.now() - new Date(ph.getString("created").replace(" ", "T")).getTime() > EST_MAX_DAYS * 86400000;
+  if (off || fresh || prevBalance == null || dismissed || stale) { gA = 0; gB = 0; }
+  else {
+    const dBal = util.round2(acc.getFloat("balance") - prevBalance);
+    gA = settle(gA, util.round2(gA + dBal - flip * (track.all || 0)), dBal);
+    gB = settle(gB, util.round2(gB + dBal - flip * (track.posted || 0)), dBal);
+  }
+  const g = Math.abs(gA) <= Math.abs(gB) ? gA : gB;
+  const show = Math.abs(g) >= 0.01;
+  // one way of counting says everything is accounted for: trust it and clear the other's leftovers
+  if (!show) { gA = 0; gB = 0; }
+  acc.set("est_gap_a", gA);
+  acc.set("est_gap_b", gB);
+  acc.set("est_shown", show);
+  app.save(acc);
+  if (!show) { if (ph) app.delete(ph); return null; }
+  if (!ph) {
+    ph = new Record(app.findCollectionByNameOrId("transactions"));
+    ph.set("user", acc.getString("user"));
+    ph.set("account", acc.id);
+    ph.set("external_id", EST_ID);
+    ph.set("date", util.today());
+    ph.set("category", "");
+  }
+  const amount = util.round2(g * flip);
+  ph.set("amount", amount);
+  ph.set("pending", true);
+  ph.set("estimated", true);
+  ph.set("payee", amount < 0 ? "Pending charge" : "Pending deposit");
+  ph.set("description", "Your balance changed, but the bank hasn't listed the transaction yet. Keel swaps this for the real one when it shows up.");
+  app.save(ph);
+  return ph;
 }
 
 function markSynced(app, conn, status, message) {
@@ -114,4 +190,4 @@ function windowStartSec(conn, firstDays) {
   return start;
 }
 
-module.exports = { upsertAccount, upsertTransactions, markSynced, windowStartSec, guessType };
+module.exports = { upsertAccount, upsertTransactions, updateEstimate, markSynced, windowStartSec, guessType, EST_ID };

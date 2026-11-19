@@ -28,7 +28,7 @@ function compute(app, userId, monthKey) {
     "date", 0, 0, { u: userId, s: histStart, e: r.end },
   ).map((t) => ({
     id: t.id, date: t.getString("date"), amount: t.getFloat("amount"), category: t.getString("category"),
-    description: t.getString("description"), payee: t.getString("payee"), split: t.getBool("split"),
+    description: t.getString("description"), payee: t.getString("payee"), split: t.getBool("split"), estimated: t.getBool("estimated"),
   })), histStart, r.end);
 
   // per month, per category net amounts
@@ -51,7 +51,7 @@ function compute(app, userId, monthKey) {
     if (!c) {
       if (t.amount > 0) b.income += t.amount;
       else { b.uncatSpend += -t.amount; b.spend += -t.amount; addDay(t, -t.amount); }
-      b.uncatCount++;
+      if (!t.estimated) b.uncatCount++; // an estimated pending charge isn't something to categorize
       continue;
     }
     b.cat[c.id] = (b.cat[c.id] || 0) + t.amount;

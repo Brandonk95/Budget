@@ -49,10 +49,13 @@ function syncConnection(app, conn) {
   const start = ingest.windowStartSec(conn, 89); // SimpleFIN caps requests at 90 days
   const result = fetchAccounts(conn.getString("secret"), start);
   const ctx = rules.context(app, conn.getString("user"));
+  const firstSync = conn.getDateTime("last_sync").isZero();
   let created = [];
 
   for (const a of result.accounts) {
+    const prev = {};
     const acc = ingest.upsertAccount(app, conn, {
+      prev,
       externalId: String(a.id),
       name: a.name,
       institution: (a.org && (a.org.name || a.org.domain)) || "",
@@ -69,7 +72,10 @@ function syncConnection(app, conn) {
       payee: t.payee || "",
       pending: !!t.pending,
     }));
-    created = created.concat(ingest.upsertTransactions(app, acc, txs, util.dateFromUnix(start), ctx));
+    const track = {};
+    created = created.concat(ingest.upsertTransactions(app, acc, txs, util.dateFromUnix(start), ctx, track));
+    try { ingest.updateEstimate(app, acc, prev.balance, track, firstSync); }
+    catch (err) { app.logger().warn("estimated pending charge", "account", acc.id, "error", util.errMsg(err)); }
   }
 
   // SimpleFIN "errors" are often informational (e.g. a range was capped); keep the

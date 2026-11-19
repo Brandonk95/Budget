@@ -393,7 +393,7 @@ function categorize(ctx, tx) {
 // Categorize every uncategorized transaction for a user. Returns the count changed.
 function applyToUncategorized(app, userId) {
   const ctx = context(app, userId);
-  const txs = app.findRecordsByFilter("transactions", "user = {:u} && category = ''", "", 0, 0, { u: userId });
+  const txs = app.findRecordsByFilter("transactions", "user = {:u} && category = '' && estimated = false", "", 0, 0, { u: userId });
   let n = 0;
   for (const t of txs) {
     const cat = categorize(ctx, {
@@ -453,7 +453,7 @@ function learnFrom(app, tx) {
   const key = merchantKey({ payee: tx.getString("payee"), description: tx.getString("description") });
   const cat = tx.getString("category");
   if (!key || key.length < 3 || !cat) return 0;
-  const others = app.findRecordsByFilter("transactions", "user = {:u} && category = '' && id != {:id}", "", 0, 0,
+  const others = app.findRecordsByFilter("transactions", "user = {:u} && category = '' && estimated = false && id != {:id}", "", 0, 0,
     { u: tx.getString("user"), id: tx.id });
   let n = 0;
   for (const o of others) {

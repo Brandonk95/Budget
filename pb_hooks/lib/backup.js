@@ -59,7 +59,7 @@ function backup(app, userId) {
   for (const name of COLLECTIONS) {
     const col = app.findCollectionByNameOrId(name);
     const fields = fieldsOf(col);
-    out[name] = app.findRecordsByFilter(name, "user = {:u}", "", 0, 0, { u: userId }).map((r) => plain(r, fields, SKIP));
+    out[name] = app.findRecordsByFilter(name, name === "transactions" ? "user = {:u} && estimated = false" : "user = {:u}", "", 0, 0, { u: userId }).map((r) => plain(r, fields, SKIP));
   }
   return out;
 }
@@ -140,7 +140,7 @@ function csvCell(v) {
 // One row per transaction; a split transaction becomes one row per part, so a pivot table by
 // category adds up. from/to are YYYY-MM-DD (inclusive) or empty.
 function transactionsCsv(app, userId, from, to) {
-  let filter = "user = {:u}";
+  let filter = "user = {:u} && estimated = false";
   const p = { u: userId };
   if (/^\d{4}-\d{2}-\d{2}$/.test(from || "")) { filter += " && date >= {:f}"; p.f = from + " 00:00:00.000Z"; }
   if (/^\d{4}-\d{2}-\d{2}$/.test(to || "")) { filter += " && date <= {:t}"; p.t = to + " 23:59:59.999Z"; }

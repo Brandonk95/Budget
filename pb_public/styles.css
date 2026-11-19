@@ -1583,3 +1583,11 @@ svg.spark { color: var(--s1); }
 .av.has-img > img { opacity: 1; transform: none; }
 .av.has-img { background: var(--surface-2); }
 .set-grav { margin-top: 14px; border-top: 1px solid var(--border); border-bottom: 0; padding-bottom: 0; }
+
+/* ---------- estimated pending charge (balance moved, transaction not listed yet) ---------- */
+.av.est-av { color: var(--warn-text, var(--muted)); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.av.est-av svg { width: 18px; height: 18px; }
+.tx-line.est .t-name, .tx-row.est .t-name { font-style: italic; }
+.tx-line.est .num, .tx-row.est .tx-amt { color: var(--muted); }
+.pill.est-p { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn-text, var(--text)); }
+.est-big { font-size: 32px; font-weight: 750; letter-spacing: -.02em; margin: 0 0 8px; }
