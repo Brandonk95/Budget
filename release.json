@@ -1,5 +1,5 @@
 {
-  "version": "2.16.7",
-  "released": "2026-11-17",
-  "motd": "Livelier emails: every alert and summary has a colored header with its headline number, progress bars for your budgets, and tips in their own boxes."
+  "version": "2.16.8",
+  "released": "2026-11-19",
+  "motd": "Profile pictures: if your email has a Gravatar, it now shows in the sidebar, on Settings and in your household. You can turn it off under Settings \u2192 Appearance."
 }

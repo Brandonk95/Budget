@@ -22,6 +22,56 @@
   const prettyDate = (s) => { if (!s) return ""; const [y, m, d] = dateOnly(s).split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
   // ---- theme: System (default), Light or Dark, kept on this device
   const THEME_KEY = "keel.theme";
+  const GRAV_KEY = "keel.gravatar";
+
+  // ---- profile pictures from Gravatar. Gravatar looks a picture up by the SHA-256 of the email
+  // address; until (or unless) one loads, the colored initial stays. Turned off in Settings.
+  const gravOn = () => { try { return localStorage.getItem(GRAV_KEY) !== "off"; } catch (_) { return true; } };
+  // crypto.subtle only exists on https or localhost, so a home server on plain http needs this
+  function sha256hex(str) {
+    const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+      0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+      0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+      0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+    const bytes = Array.from(new TextEncoder().encode(str));
+    const bits = bytes.length * 8;
+    bytes.push(0x80);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    for (let i = 7; i >= 0; i--) bytes.push(i > 3 ? 0 : (bits >>> (i * 8)) & 0xff);
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const r = (x, n) => (x >>> n) | (x << (32 - n));
+    const w = new Array(64);
+    for (let o = 0; o < bytes.length; o += 64) {
+      for (let i = 0; i < 16; i++) w[i] = (bytes[o + i * 4] << 24) | (bytes[o + i * 4 + 1] << 16) | (bytes[o + i * 4 + 2] << 8) | bytes[o + i * 4 + 3];
+      for (let i = 16; i < 64; i++) {
+        const s0 = r(w[i - 15], 7) ^ r(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = r(w[i - 2], 17) ^ r(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+      }
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+        const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+      H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+    }
+    return H.map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+  }
+  const gravMiss = new Set(); // addresses with no Gravatar, so we don't ask again this session
+  function loadGravatar(el) {
+    const email = String(el.dataset.email || "").trim().toLowerCase();
+    el.dataset.g = "1";
+    if (!email || !gravOn() || gravMiss.has(email)) return;
+    const img = new Image();
+    img.alt = ""; img.referrerPolicy = "no-referrer"; img.decoding = "async";
+    img.onload = () => { if (!el.isConnected) return; el.appendChild(img); requestAnimationFrame(() => el.classList.add("has-img")); };
+    img.onerror = () => gravMiss.add(email);
+    img.src = `https://gravatar.com/avatar/${sha256hex(email)}?s=160&d=404`;
+  }
+  const gravScan = (root) => (root.querySelectorAll ? root.querySelectorAll(".av[data-email]:not([data-g])") : []).forEach(loadGravatar);
+  new MutationObserver((muts) => { for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches(".av[data-email]:not([data-g])")) loadGravatar(n); gravScan(n); } })
+    .observe(document.documentElement, { childList: true, subtree: true });
   const getTheme = () => { try { return localStorage.getItem(THEME_KEY) || "system"; } catch (_) { return "system"; } };
   function applyTheme(t) {
     const root = document.documentElement;
@@ -600,7 +650,8 @@
 
   // each page wears its own color in the sidebar
   const NAV_C = { dashboard: 1, budget: 2, transactions: 7, spending: 4, reports: 5, recurring: 3, cashflow: 1, networth: 6, accounts: 2, goals: 8, settings: 7 };
-  const meAv = (me) => `<span class="av" style="--c:var(--s${(hashStr(String(me.email || "").toLowerCase()) % 8) + 1})" aria-hidden="true">${esc(((me.name || me.email || "?").trim()[0] || "?").toUpperCase())}</span>`;
+  const personAv = (p, cls) => `<span class="av${cls ? " " + cls : ""}" data-email="${esc(String(p.email || "").trim().toLowerCase())}" style="--c:var(--s${(hashStr(String(p.email || "").toLowerCase()) % 8) + 1})" aria-hidden="true">${esc(((p.name || p.email || "?").trim()[0] || "?").toUpperCase())}</span>`;
+  const meAv = (me, cls) => personAv(me, cls);
 
   function renderShell() {
     const me = pb.authStore.record;
@@ -3048,7 +3099,7 @@
     view.innerHTML = `
       <section class="card ov-hero set-hero" aria-label="Your account">
         <div class="set-me">
-          ${meAv(me).replace('class="av"', 'class="av set-av"')}
+          ${meAv(me, "set-av")}
           <div class="set-me-t"><h2>${esc(me.name || me.email.split("@")[0])}</h2>
             <div class="set-me-e">${esc(me.email)}<span class="set-ver ${me.verified ? "" : "no"}">${me.verified ? "Verified" : "Not verified"}</span></div></div>
         </div>
@@ -3066,6 +3117,7 @@
             <div class="card-h"><h2 id="set-ap" class="ic-h">${hIc("palette", "s7")}Appearance</h2></div>
             <p class="small muted" style="margin-top:0">System follows your device's light or dark setting.</p>
             <div class="tp-grid" role="radiogroup" aria-label="Theme">${THEMES.map(([k, l]) => `<button type="button" role="radio" aria-checked="${theme === k}" data-theme-pick="${k}" class="tp ${theme === k ? "on" : ""}"><span class="tp-prev tp-${k}" aria-hidden="true"><i></i><i></i><i></i></span><span class="tp-l">${l}</span></button>`).join("")}</div>
+            <label class="set-row set-grav">${hIc("user", "s5")}<span class="grow"><b>Profile pictures from Gravatar</b><span class="small muted">Shows the picture linked to each person's email on <a href="https://gravatar.com" target="_blank" rel="noopener">gravatar.com</a>. Gravatar gets a scrambled (hashed) form of the address. This setting is for this device.</span></span><input type="checkbox" class="sw" id="grav-on" ${gravOn() ? "checked" : ""}></label>
           </section>
 
           <section class="card" aria-labelledby="set-no">
@@ -3142,6 +3194,14 @@
       toast(`Theme: ${b.textContent}`);
       const tn = $("#set-theme-n span", view); if (tn) tn.textContent = `Theme: ${b.textContent}`;
     }));
+    $("#grav-on", view).onchange = (e) => {
+      try { if (e.target.checked) localStorage.removeItem(GRAV_KEY); else localStorage.setItem(GRAV_KEY, "off"); } catch (_) {}
+      $$(".av[data-email]").forEach((el) => {
+        if (e.target.checked) { delete el.dataset.g; loadGravatar(el); }
+        else { el.classList.remove("has-img"); $$("img", el).forEach((i) => i.remove()); }
+      });
+      toast(e.target.checked ? "Gravatar pictures on" : "Gravatar pictures off");
+    };
     $("#prefs").addEventListener("change", () => {
       const n = $("#set-alerts-n span", view), f = $("#prefs", view);
       if (n) n.innerHTML = `<b>${alertsOn((k) => f.elements[k] && f.elements[k].checked)}</b> of ${ALERTS.length} alerts on`;
@@ -3168,6 +3228,7 @@
         toast("Name saved");
         const who = $(".side .who"); if (who) who.textContent = pb.authStore.record.name || pb.authStore.record.email;
         const av = $(".side .foot .av"); if (av) av.outerHTML = meAv(pb.authStore.record);
+        const sav = $(".set-av", view); if (sav) sav.outerHTML = meAv(pb.authStore.record, "set-av");
         const hn = $(".set-me h2", view); if (hn) hn.textContent = pb.authStore.record.name || pb.authStore.record.email.split("@")[0];
       } catch (err) { fail(err); }
     };
@@ -3215,7 +3276,7 @@
   // ------------------------------------------------------------------ household (Settings)
   function householdCard(hh, me, smtp) {
     const who = (p) => esc(p.name || p.email);
-    const personRow = (p, tag, btn) => `<div class="hh-row"><span class="av" style="--c:var(--s${(hashStr(String(p.email || "").toLowerCase()) % 8) + 1})" aria-hidden="true">${esc(((p.name || p.email || "?").trim()[0] || "?").toUpperCase())}</span>
+    const personRow = (p, tag, btn) => `<div class="hh-row">${personAv(p)}
       <span class="grow"><span class="hh-name"><b>${who(p)}</b>${tag ? `<span class="pill">${tag}</span>` : ""}</span><span class="small muted">${esc(p.email)}</span></span>${btn || ""}</div>`;
     const inviteForm = smtp
       ? `<form id="hh-invite" class="row hh-invite"><input name="email" type="email" required placeholder="Their email address" aria-label="Email address to invite" autocomplete="off"><button class="btn primary">Send invite</button></form>`
