@@ -1591,3 +1591,16 @@ svg.spark { color: var(--s1); }
 .tx-line.est .num, .tx-row.est .tx-amt { color: var(--muted); }
 .pill.est-p { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn-text, var(--text)); }
 .est-big { font-size: 32px; font-weight: 750; letter-spacing: -.02em; margin: 0 0 8px; }
+
+/* ---------- morning auto-sync indicator ---------- */
+.sync-chip {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 60;
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px 8px 12px; border-radius: 99px;
+  background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border); box-shadow: var(--shadow-pop); animation: chip-in 260ms var(--ease-out);
+  transition: opacity 300ms var(--ease), transform 300ms var(--ease);
+}
+.sync-chip svg { width: 16px; height: 16px; color: var(--primary); animation: spin 1.1s linear infinite; }
+.sync-chip.out { opacity: 0; transform: translate(-50%, -8px); }
+@keyframes chip-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+@media (max-width: 760px) { .sync-chip { top: calc(10px + env(safe-area-inset-top)); } }

@@ -1,5 +1,5 @@
 {
-  "version": "2.17.1",
+  "version": "2.17.2",
   "released": "2026-11-20",
-  "motd": "Fix: a deposit filed under a spending category could pull the Spending this month line down by its whole amount. Like the totals, a refund now only brings its own category down to $0."
+  "motd": "Your bank now refreshes on its own the first time you open Keel after 6am, so the morning starts with yesterday's purchases."
 }

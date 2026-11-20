@@ -3532,6 +3532,44 @@
   window.addEventListener("online", () => { toast("Back online"); if (pb.authStore.isValid) route(); });
 
   // ------------------------------------------------------------------ boot
+  // The first time the app is opened after 6am (your time), refresh the bank once so the
+  // morning starts with yesterday's purchases. It goes by the connections' last sync, so it
+  // happens once a day for the household, whichever device opens first.
+  const AUTO_SYNC_HOUR = 6;
+  const AUTO_SYNC_KEY = "keel.autosync";
+  let autoSyncing = false;
+  async function autoSync() {
+    if (autoSyncing || !pb.authStore.isValid || document.hidden) return;
+    const now = new Date();
+    if (now.getHours() < AUTO_SYNC_HOUR) return;
+    const since = new Date(now.getFullYear(), now.getMonth(), now.getDate(), AUTO_SYNC_HOUR).getTime();
+    // don't retry over and over if it fails: once per 30 minutes per device at most
+    try { if (Date.now() - Number(localStorage.getItem(AUTO_SYNC_KEY) || 0) < 30 * 60 * 1000) return; } catch (_) {}
+    let conns;
+    try { conns = await pb.collection("bank_connections").getFullList({ fields: "id,last_sync,status" }); } catch (_) { return; }
+    if (!conns.length) return;
+    // a connection that's failing needs reconnecting; the regular schedule keeps retrying it
+    const stale = conns.some((c) => c.status !== "error" && (!c.last_sync || new Date(c.last_sync.replace(" ", "T")).getTime() < since));
+    if (!stale) return;
+    autoSyncing = true;
+    try { localStorage.setItem(AUTO_SYNC_KEY, String(Date.now())); } catch (_) {}
+    const chip = document.createElement("div");
+    chip.className = "sync-chip"; chip.setAttribute("role", "status");
+    chip.innerHTML = `${icon("repeat")}<span>Getting your latest transactions…</span>`;
+    document.body.appendChild(chip);
+    try {
+      const r = await api("/api/budget/sync", { method: "POST" });
+      if (r.new_transactions) toast(`${plural(r.new_transactions, "new transaction")} from your bank`);
+      if (r.errors && r.errors.length) toast(r.errors.join("\n"), true);
+      // redraw with the new numbers, unless a dialog is open
+      if ((r.new_transactions || r.accounts) && !$("#modal-root").children.length) { await loadAccounts().catch(() => {}); route(); }
+    } catch (_) { /* the regular schedule will catch up */ }
+    chip.classList.add("out");
+    setTimeout(() => chip.remove(), 400);
+    autoSyncing = false;
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) autoSync(); });
+
   async function start() {
     if (/^#\/?(login|register)?$/.test(location.hash)) history.replaceState(null, "", "#/dashboard");
     if (/^#\/?join\//.test(location.hash)) return route(); // the invite page draws its own card
@@ -3539,6 +3577,7 @@
     await Promise.all([loadCategories(), loadAccounts()]).catch(() => {});
     route();
     checkSeenVersion();
+    autoSync();
   }
 
   window.addEventListener("hashchange", route);
