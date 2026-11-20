@@ -37,10 +37,15 @@ function compute(app, userId, monthKey) {
   // daily spend for this month and last month (cumulative "spent so far" chart)
   const prevKey = util.shiftMonth(r.key, -1);
   const dayCur = {}, dayPrev = {};
-  const addDay = (t, v) => {
+  // per day, per category, so a refund (or a deposit filed under a spending category) can bring
+  // its category down to $0 but never below, the same way the month's totals count it
+  const addDay = (t, v, key) => {
     const m = t.date.slice(0, 7);
     const box = m === r.key ? dayCur : m === prevKey ? dayPrev : null;
-    if (box) { const d = parseInt(t.date.slice(8, 10), 10); box[d] = (box[d] || 0) + v; }
+    if (!box) return;
+    const d = parseInt(t.date.slice(8, 10), 10);
+    const day = (box[d] = box[d] || {});
+    day[key] = (day[key] || 0) + v;
   };
   for (const t of txs) {
     const m = t.date.slice(0, 7);
@@ -50,17 +55,22 @@ function compute(app, userId, monthKey) {
     if (c && c.kind === "income") { b.income += t.amount; continue; }
     if (!c) {
       if (t.amount > 0) b.income += t.amount;
-      else { b.uncatSpend += -t.amount; b.spend += -t.amount; addDay(t, -t.amount); }
+      else { b.uncatSpend += -t.amount; b.spend += -t.amount; addDay(t, -t.amount, ""); }
       if (!t.estimated) b.uncatCount++; // an estimated pending charge isn't something to categorize
       continue;
     }
     b.cat[c.id] = (b.cat[c.id] || 0) + t.amount;
-    addDay(t, -t.amount);
+    addDay(t, -t.amount, c.id);
   }
   const cumulative = (box, n) => {
     const out = [];
-    let run = 0;
-    for (let d = 1; d <= n; d++) { run += box[d] || 0; out.push(util.round2(run)); }
+    const run = {};
+    for (let d = 1; d <= n; d++) {
+      for (const k in box[d] || {}) run[k] = (run[k] || 0) + box[d][k];
+      let total = 0;
+      for (const k in run) total += Math.max(0, run[k]);
+      out.push(util.round2(total));
+    }
     return out;
   };
   for (const m in byMonth) {
