@@ -1,5 +1,5 @@
 {
-  "version": "2.17.2",
+  "version": "2.17.3",
   "released": "2026-11-20",
-  "motd": "Your bank now refreshes on its own the first time you open Keel after 6am, so the morning starts with yesterday's purchases."
+  "motd": "Moving a deposit into Paycheck now picks up your pay schedule right away, so Cash flow shows your next paycheck without waiting for the bank."
 }

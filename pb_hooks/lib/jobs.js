@@ -49,9 +49,9 @@ function afterNewTransactions(app, user, created) {
   const household = require(`${__hooks}/lib/household.js`);
   if (user.getString("household")) user = app.findRecordById("users", user.getString("household"));
   try { require(`${__hooks}/lib/networth.js`).snapshot(app, user.id); } catch (err) { app.logger().error("net worth snapshot", "error", util.errMsg(err)); }
-  if (created.length) {
-    try { require(`${__hooks}/lib/recurring.js`).detect(app, user.id); } catch (err) { app.logger().error("recurring detect", "error", util.errMsg(err)); }
-  }
+  // every sync, not just ones with new transactions: a recategorized deposit or a bill that
+  // went quiet changes the picture too
+  try { require(`${__hooks}/lib/recurring.js`).detect(app, user.id); } catch (err) { app.logger().error("recurring detect", "error", util.errMsg(err)); }
   const alerts = require(`${__hooks}/lib/alerts.js`);
   for (const r of household.recipients(app, user)) {
     try { notify.largeTransactions(app, r, created); } catch (err) { app.logger().error("large txn email", "error", util.errMsg(err)); }

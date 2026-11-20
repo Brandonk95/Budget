@@ -138,6 +138,11 @@ onRecordUpdateRequest((e) => {
   if (learn) {
     try { require(`${__hooks}/lib/rules.js`).learnFrom(e.app, rec); } catch (err) { e.app.logger().warn("learn category failed", "error", String(err)); }
   }
+  // a deposit moved into (or out of) an income category can make or break a paycheck pattern,
+  // so look again now instead of waiting for the next sync with new transactions
+  if (name === "transactions" && rec.getFloat("amount") > 0 && rec.getString("category") !== rec.original().getString("category")) {
+    try { require(`${__hooks}/lib/recurring.js`).detect(e.app, rec.getString("user")); } catch (err) { e.app.logger().warn("recurring detect failed", "error", String(err)); }
+  }
 }, "transactions", "rules", "accounts", "recurring");
 
 // Auto-categorize manually created transactions.
