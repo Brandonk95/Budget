@@ -118,10 +118,29 @@ function paychecks(app, user, created) {
     ]);
   } catch (_) {}
   const rows = landed.map((t) => notify.row([util.esc(sources[recurring.normalizePayee(nameOf(t))]), pretty(t.getString("date")), `<span style="color:#0f7a52">+${util.money(t.getFloat("amount"))}</span>`]));
+  let plan = "";
+  try { plan = planHtml(require(`${__hooks}/lib/payday.js`).compute(app, require(`${__hooks}/lib/household.js`).ownerId(user))); } catch (_) {}
   const subject = `Your paycheck arrived: +${util.money(total)}`;
-  notify.send(app, user.getString("email"), subject, notify.layout(app, "Your paycheck arrived", `${notify.table(rows)}${left ? `<div style="margin-top:14px">${left}</div>` : ""}`,
+  notify.send(app, user.getString("email"), subject, notify.layout(app, "Your paycheck arrived", `${notify.table(rows)}${plan}${left ? `<div style="margin-top:14px">${left}</div>` : ""}`,
     { tone: "green", icon: "💰", kicker: "Payday", stat: `+${util.money(total)}`, statLabel: "just landed" }));
   return landed.length;
 }
 
-module.exports = { duplicates, priceIncreases, renewals, paychecks };
+// "Where this paycheck goes": bills before the next one, goals, and what's left to spend per day.
+function planHtml(p) {
+  const notify = require(`${__hooks}/lib/notify.js`);
+  if (!p || !p.plan) return "";
+  const pl = p.plan;
+  const pct = (v) => (pl.amount > 0 ? Math.max(0, Math.min(100, (v / pl.amount) * 100)) : 0);
+  const parts = [
+    notify.meter(`Bills before ${pretty(pl.next_date)}`, `${util.money(pl.bills_total)} · ${pl.bills.length} due`, pct(pl.bills_total), notify.TONES.amber[0]),
+    pl.goals.length ? notify.meter(`Goals (${pl.goals.map((g) => util.esc(g.name)).join(", ")})`, util.money(pl.goals_total), pct(pl.goals_total), notify.TONES.purple[0]) : "",
+    notify.meter("Spending money", pl.spending < 0 ? `<span style="color:#b42318">short ${util.money(-pl.spending)}</span>` : util.money(pl.spending), pct(pl.spending), notify.TONES.green[0]),
+  ].join("");
+  const note = pl.spending < 0
+    ? notify.callout(`Bills and goals before your next paycheck come to more than this one. Your balance covers the difference, or ease off a goal for this pay period.`, "amber", "⚠️")
+    : notify.callout(`That's about <b>${util.money(pl.per_day)} a day</b> for the ${pl.days} days until ${pretty(pl.next_date)}.`, "green", "🗓️");
+  return `${notify.section("🧾", "A plan for this paycheck")}${parts}${note}`;
+}
+
+module.exports = { duplicates, priceIncreases, renewals, paychecks, planHtml };

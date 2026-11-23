@@ -152,6 +152,7 @@
     more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
@@ -642,6 +643,7 @@
     accounts: { title: "Accounts", render: renderAccounts },
     goals: { title: "Goals", render: renderGoals },
     settings: { title: "Settings", render: renderSettings },
+    review: { title: "Review", hidden: true, render: renderReview },
   };
 
   function currentRoute() {
@@ -732,6 +734,7 @@
     if (seq !== routeSeq) return;
     if (moved) { void view.offsetWidth; view.classList.add("enter"); }
     if (fresh) countUp(view);
+    refreshReviewBadge();
   }
 
   // Headline amounts tick up from zero. Only the leading "$1,234.56" text is animated; the final
@@ -1055,16 +1058,74 @@
   // ------------------------------------------------------------------ dashboard
   // Answers three things first: how am I doing (Left to spend + status), what needs me (attention list),
   // what's coming (upcoming bills). Everything else supports those.
-  const ATT_ICON = { cashflow: "cashflow", recurring: "recurring", budget: "budget", transactions: "transactions", goals: "goals" };
+  const ATT_ICON = { cashflow: "cashflow", recurring: "recurring", budget: "budget", transactions: "transactions", goals: "goals", review: "check" };
+
+  // ---- review inbox: new bank transactions wait here for a quick look
+  const UNREVIEWED = "reviewed = false && estimated = false";
+  async function reviewCount() {
+    try { return (await pb.collection("transactions").getList(1, 1, { filter: UNREVIEWED, fields: "id" })).totalItems; } catch (_) { return 0; }
+  }
+  async function refreshReviewBadge() {
+    if (!pb.authStore.isValid) return;
+    const n = await reviewCount();
+    $$('.nav a[data-r="transactions"]').forEach((a) => {
+      let b = $(".nav-n", a);
+      if (!n) { if (b) b.remove(); return; }
+      if (!b) { b = document.createElement("b"); b.className = "nav-n"; a.appendChild(b); }
+      b.textContent = n > 99 ? "99+" : String(n);
+      b.setAttribute("aria-label", `${n} to review`);
+    });
+  }
+
+  // ---- until payday, and where the last paycheck goes
+  function paydayCard(p) {
+    if (!p || !p.has_income || !p.next || !p.until) return "";
+    const u = p.until, n = p.next, pl = p.plan;
+    const when = n.days === 0 ? "today" : n.days === 1 ? "tomorrow" : `in ${n.days} days`;
+    const billTip = u.bills.length ? u.bills.map((b) => `${esc(b.name)} · ${esc(prettyDate(b.date))}: ${esc(money(b.amount))}`).join("<br>") : "";
+    const lines = [
+      [`In checking${u.accounts > 1 ? " and cash" : ""}`, money(u.balance), ""],
+      [`Bills before payday${u.bills.length ? ` (${u.bills.length})` : ""}`, u.bills_total ? "−" + money(u.bills_total) : money(0), billTip],
+      u.cushion ? ["Cushion you keep", "−" + money(u.cushion), "Your cash-flow warning level, set on the Cash flow page"] : null,
+    ].filter(Boolean);
+    let planHtml = "";
+    if (pl) {
+      const total = Math.max(pl.amount, pl.bills_total + pl.goals_total, 0.01);
+      const segs = [["bills", pl.bills_total, "var(--warn)"], ["goals", pl.goals_total, "var(--s7)"], ["spend", Math.max(0, pl.spending), "var(--good)"]].filter((x) => x[1] > 0);
+      const billsList = pl.bills.map((b) => `${esc(b.name)} · ${esc(prettyDate(b.date))}: ${esc(money(b.amount))}${b.paid ? " (paid)" : ""}`).join("<br>");
+      const goalsList = pl.goals.map((g) => `${esc(g.name)}: ${esc(money(g.amount))}`).join("<br>");
+      const tips = { bills: billsList, goals: goalsList, spend: `About <b>${esc(money(pl.per_day))}</b> a day for ${plural(pl.days, "day")}` };
+      planHtml = `<div class="pd-plan">
+        <div class="row pd-plan-h"><span class="label">Your ${esc(prettyDate(pl.date))} paycheck</span><div class="spacer"></div><b class="num pos">+${money(pl.amount)}</b></div>
+        <div class="pd-bar" role="img" aria-label="Paycheck plan: bills ${esc(money(pl.bills_total))}, goals ${esc(money(pl.goals_total))}, spending ${esc(money(pl.spending))}">${segs.map(([k, v, c]) => `<i style="flex:${(v / total).toFixed(4)};background:${c}" ${tips[k] ? tipAttr(tips[k]) : ""}></i>`).join("")}</div>
+        <ul class="pd-legend">
+          <li ${billsList ? tipAttr(billsList) : ""}><i style="--c:var(--warn)"></i>Bills until ${esc(prettyDate(pl.next_date))}<b class="num">${money(pl.bills_total)}</b></li>
+          ${pl.goals.length ? `<li ${tipAttr(goalsList)}><i style="--c:var(--s7)"></i>Toward ${pl.goals.length === 1 ? esc(pl.goals[0].name) : `${pl.goals.length} goals`}<b class="num">${money(pl.goals_total)}</b></li>` : ""}
+          <li><i style="--c:var(--good)"></i>Spending money<b class="num ${pl.spending < 0 ? "negc" : ""}">${pl.spending < 0 ? "−" : ""}${money(Math.abs(pl.spending))}</b></li>
+        </ul>
+        <p class="small muted pd-note">${pl.spending < 0 ? `Bills and goals before your next paycheck add up to more than this one. Your balance covers the gap, or ease off a goal this time.` : `That's about <b>${money(pl.per_day)} a day</b> until your next paycheck.`}</p>
+      </div>`;
+    }
+    return `<section class="card pd-card ${u.safe < 0 ? "short" : ""}" aria-labelledby="pd-h">
+      <div class="card-h"><h2 id="pd-h" class="ic-h">${hIc("calendar", "s4")}Until payday</h2><div class="spacer"></div><span class="pill pd-pill">${n.days === 0 ? "Payday today" : `${esc(prettyDate(n.date))} · ${when}`}</span></div>
+      <div class="label">Safe to spend</div>
+      <div class="kpi-v num pd-big ${u.safe < 0 ? "negc" : ""}">${u.safe < 0 ? "−" : ""}${money(Math.abs(u.safe))}</div>
+      <div class="small muted">${u.safe < 0 ? `Bills before payday come to more than you have in checking.` : n.days > 0 ? `About <b>${money(u.per_day)}</b> a day until ${esc(n.name)} lands${n.late ? " (it's running late)" : ""}` : `${esc(n.name)} should land today.`}</div>
+      <dl class="pd-math">${lines.map(([k, v, tip]) => `<div ${tip ? tipAttr(tip) : ""}><dt>${esc(k)}</dt><dd class="num">${v}</dd></div>`).join("")}</dl>
+      ${planHtml}
+    </section>`;
+  }
   async function renderDashboard(view) {
     const b = monthBounds(state.month);
-    const [d, rec, nw, recent, goals, cf] = await Promise.all([
+    const [d, rec, nw, recent, goals, cf, pd, rvN] = await Promise.all([
       api("/api/budget/insights", { query: { month: state.month } }),
       api("/api/budget/recurring", { query: { month: state.month } }),
       api("/api/budget/networth", { query: { days: 30 } }),
       pb.collection("transactions").getList(1, 6, { sort: "-date,-created", filter: pb.filter("date < {:e}", { e: b.end }) }),
       api("/api/budget/goals").then((x) => x.goals.filter((g) => g.status !== "done").slice(0, 4)),
       api("/api/budget/forecast", { query: { days: 30, accounts: cfAccountsParam() } }).catch(() => null),
+      api("/api/budget/payday").catch(() => null),
+      reviewCount(),
       loadCategories(), loadAccounts(),
     ]);
     const today = d.daily.today;
@@ -1125,6 +1186,7 @@
       // a bill paid in full (rent: $1,650 of $1,650) isn't a warning
       else if (d.is_current && c.remaining >= 1 && c.spent / c.available >= 0.85) att.push(["warn", `${c.name} has ${money(c.remaining)} left (${Math.round((c.spent / c.available) * 100)}% used)`, "#/budget", "Budget"]);
     }
+    if (rvN && d.is_current) att.push(["info", `${plural(rvN, "new transaction")} to look over`, "#/review", "Review"]);
     if (d.uncategorized.count) att.push(["info", `${plural(d.uncategorized.count, "transaction")} (${money(d.uncategorized.amount)}) need a category`, "#/transactions?uncat=1", "Categorize"]);
     for (const g of goals.filter((g) => g.status === "behind" && g.per_day != null).slice(0, 1)) att.push(["info", `${g.name} is behind: add ${money(g.per_day)}/day to reach it by ${prettyDate(g.target_date)}`, "#/goals", "Goals"]);
     const attention = att.slice(0, 5);
@@ -1214,6 +1276,7 @@
             ${recent.items.length ? recent.items.map(txLine).join("") : `<div class="empty">No transactions yet. <a href="#/accounts">Connect a bank</a> or import a CSV.</div>`}
           </section>
           <div class="stack">
+            ${d.is_current ? paydayCard(pd) : ""}
             ${cf && !cf.empty ? `<a class="card" href="#/cashflow" aria-label="Cash flow forecast">
               <div class="card-h"><h2 class="ic-h"><span class="kpi-ic" style="--c:var(--s3)" aria-hidden="true">${icon("cashflow")}</span>Cash flow</h2><div class="spacer"></div><span class="small link-t">Forecast →</span></div>
               <div class="row" style="align-items:flex-end;flex-wrap:nowrap"><div><div class="label">Lowest in the next 30 days</div><div class="kpi-v num ${cf.below_floor_day || cf.low.balance < 0 ? "negc" : ""}">${money(cf.low.balance)}</div>
@@ -1775,7 +1838,7 @@
   }
 
   async function renderTransactions(view) {
-    await Promise.all([loadCategories(), loadAccounts()]);
+    const [rvN] = await Promise.all([reviewCount(), loadCategories(), loadAccounts()]);
     if (/uncat=1/.test(location.hash)) { txState.category = "__none"; history.replaceState(null, "", "#/transactions"); }
     if (/excluded=1/.test(location.hash)) { txState.category = "__excluded"; history.replaceState(null, "", "#/transactions"); }
     const active = (txState.account ? 1 : 0) + (txState.category ? 1 : 0);
@@ -1794,6 +1857,7 @@
           <button class="btn" id="apply-rules" title="Run your rules on uncategorized transactions">Apply rules</button>
           <button class="btn primary" id="add-tx">+ Add</button>
         </div>
+        ${rvN ? `<a class="rv-banner" href="#/review"><span class="kpi-ic" style="--c:var(--s7)" aria-hidden="true">${icon("check")}</span><span class="grow"><b>${plural(rvN, "new transaction")} to review</b><span class="small muted"> · a quick look to check they're right</span></span><span class="small link-t">Review →</span></a>` : ""}
         <div class="tx-head" aria-hidden="true"><span></span><span>Merchant</span><span>Category</span><span>Account</span><span class="right">Amount</span></div>
         <div id="tx-list">${SKELETON_ROWS}</div>
       </div>`;
@@ -1857,6 +1921,66 @@
     });
     const pp = $("#pprev"); if (pp) pp.onclick = () => { txState.page--; loadTx(); };
     const pn = $("#pnext"); if (pn) pn.onclick = () => { txState.page++; loadTx(); };
+  }
+
+  // ------------------------------------------------------------------ review inbox
+  function rvRow(t) {
+    const c = catById(t.category), acc = accById(t.account), inflow = t.amount > 0;
+    return `<div class="rv-row" data-id="${t.id}">
+      ${avatar(t.payee || t.description, c)}
+      <button type="button" class="rv-m" aria-label="Edit ${esc(t.payee || t.description || "transaction")}"><span class="t-name">${esc(t.payee || t.description || "Transaction")}${t.pending ? ' <span class="pill">pending</span>' : ""}</span>
+        <span class="small muted">${esc(prettyDate(t.date))}${acc ? " · " + esc(acctLabel(acc)) : ""}</span></button>
+      <div class="rv-amt num ${inflow ? "pos" : ""}">${inflow ? "+" : "−"}${money(Math.abs(t.amount))}</div>
+      ${t.split ? `<span class="small muted rv-split">Split</span>` : `<select class="rv-cat" aria-label="Category for ${esc(t.payee || t.description || "this transaction")}">${categoryOptions(t.category)}</select>`}
+      <button type="button" class="btn sm rv-ok">${icon("check")}<span>Looks right</span></button>
+    </div>`;
+  }
+  async function renderReview(view) {
+    await Promise.all([loadCategories(), loadAccounts()]);
+    const res = await pb.collection("transactions").getList(1, 200, { filter: UNREVIEWED, sort: "-date,-created" });
+    if (!res.items.length) {
+      view.innerHTML = `<div class="card rv-done"><span class="act-seal ok" aria-hidden="true"><svg viewBox="0 0 52 52"><path class="act-tick" d="M16 27l7 7 14-15"/></svg></span>
+        <h2>All caught up</h2><p class="muted">New transactions from your bank wait here for a quick look. Check each one off, or fix its category and Keel learns that merchant.</p>
+        <div class="row" style="justify-content:center"><a class="btn" href="#/transactions">All transactions</a><a class="btn primary" href="#/dashboard">Back to Overview</a></div></div>`;
+      return;
+    }
+    let left = res.totalItems;
+    const head = () => `${plural(left, "transaction")} to review`;
+    view.innerHTML = `<div class="card rv-card">
+      <div class="card-h"><div><h2 id="rv-h">${head()}</h2><div class="small muted">New from your bank. Check that each one is right; changing a category also teaches Keel that merchant.</div></div><div class="spacer"></div>
+        <button class="btn" id="rv-all">Mark all reviewed</button></div>
+      <div class="rv-list">${res.items.map(rvRow).join("")}</div></div>`;
+    const byId = Object.fromEntries(res.items.map((t) => [t.id, t]));
+    const done = (el) => {
+      el.classList.add("rv-out");
+      left = Math.max(0, left - 1);
+      setTimeout(() => {
+        el.remove();
+        if (!$(".rv-row", view)) renderReview(view); else $("#rv-h").textContent = head();
+        refreshReviewBadge();
+      }, 300);
+    };
+    $$(".rv-row", view).forEach((el) => {
+      const t = byId[el.dataset.id];
+      $(".rv-m", el).onclick = () => editTx(t);
+      $(".rv-ok", el).onclick = async (e) => {
+        const btn = e.currentTarget; btn.classList.add("loading");
+        try { await pb.collection("transactions").update(t.id, { reviewed: true }); done(el); } catch (err) { fail(err); btn.classList.remove("loading"); }
+      };
+      const sel = $(".rv-cat", el);
+      if (sel) sel.onchange = async () => {
+        try {
+          await pb.collection("transactions").update(t.id, { category: sel.value, reviewed: true });
+          const c = catById(sel.value);
+          toast(c ? `Filed under ${c.name}` : "Marked uncategorized");
+          done(el);
+        } catch (err) { fail(err); sel.value = t.category || ""; }
+      };
+    });
+    $("#rv-all").onclick = async (e) => {
+      const btn = e.currentTarget; btn.classList.add("loading");
+      try { const r = await api("/api/budget/review/all", { method: "POST" }); toast(`Marked ${plural(r.reviewed, "transaction")} reviewed`); route(); } catch (err) { fail(err); btn.classList.remove("loading"); }
+    };
   }
 
   function suggestPattern(tx) {

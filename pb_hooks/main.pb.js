@@ -115,6 +115,8 @@ onRecordUpdateRequest((e) => {
     // split is only changed through /split; a split transaction's category follows its parts
     rec.set("split", rec.original().getBool("split"));
     if (rec.getBool("split")) rec.set("category", rec.original().getString("category"));
+    // anything you edit counts as reviewed
+    rec.set("reviewed", true);
     // a category picked by hand teaches Keel about that merchant
     if (rec.getString("category") !== rec.original().getString("category")) {
       rec.set("cat_manual", !!rec.getString("category"));
@@ -147,6 +149,7 @@ onRecordUpdateRequest((e) => {
 
 // Auto-categorize manually created transactions.
 onRecordCreateRequest((e) => {
+  e.record.set("reviewed", true); // you added it, so you've seen it
   if (e.record.getString("category")) {
     e.record.set("cat_manual", true);
   } else {
@@ -365,6 +368,19 @@ routerAdd("POST", "/api/budget/transactions/{id}/split", (e) => {
   const splits = require(`${__hooks}/lib/splits.js`);
   const body = e.requestInfo().body || {};
   return e.json(200, splits.save(e.app, (e.auth.getString("household") || e.auth.id), e.request.pathValue("id"), body.parts || []));
+}, $apis.requireAuth("users"));
+
+// Until payday and the plan for the last paycheck.
+routerAdd("GET", "/api/budget/payday", (e) => {
+  const payday = require(`${__hooks}/lib/payday.js`);
+  return e.json(200, payday.compute(e.app, (e.auth.getString("household") || e.auth.id)));
+}, $apis.requireAuth("users"));
+
+// Review inbox: check everything off at once.
+routerAdd("POST", "/api/budget/review/all", (e) => {
+  const uid = e.auth.getString("household") || e.auth.id;
+  const n = e.app.db().newQuery("UPDATE transactions SET reviewed = TRUE WHERE user = {:u} AND reviewed = FALSE").bind({ u: uid }).execute().rowsAffected();
+  return e.json(200, { reviewed: n });
 }, $apis.requireAuth("users"));
 
 routerAdd("GET", "/api/budget/forecast", (e) => {

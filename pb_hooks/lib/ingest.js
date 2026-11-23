@@ -51,6 +51,12 @@ function upsertAccount(app, conn, a) {
 // windowStart: stored-date string; pending rows in the window that vanished get removed.
 // track, if given, gets how much the account's transactions moved: .all (every row) and
 // .posted (pending rows count as 0), for the estimated pending charge below.
+// transactions dated before this (a week ago) skip the review inbox
+function reviewCutoff() {
+  const d = new Date(Date.now() - 7 * 86400000);
+  return d.getUTCFullYear() + "-" + util.pad(d.getUTCMonth() + 1) + "-" + util.pad(d.getUTCDate());
+}
+
 function upsertTransactions(app, acc, txs, windowStart, ctx, track) {
   track = track || {};
   track.all = 0; track.posted = 0;
@@ -93,6 +99,8 @@ function upsertTransactions(app, acc, txs, windowStart, ctx, track) {
     tx.set("payee", payee);
     tx.set("pending", !!t.pending);
     tx.set("category", rules.categorize(ctx, { description: desc, payee, amount, hint: t.hint }));
+    // only recent ones go to the review inbox: a first sync or a CSV import of old history doesn't
+    tx.set("reviewed", String(t.date).slice(0, 10) < reviewCutoff());
     app.save(tx);
     created.push(tx);
     counts(amount, !!t.pending);
@@ -163,6 +171,7 @@ function updateEstimate(app, acc, prevBalance, track, fresh) {
     ph.set("external_id", EST_ID);
     ph.set("date", util.today());
     ph.set("category", "");
+    ph.set("reviewed", true);
   }
   const amount = util.round2(g * flip);
   ph.set("amount", amount);

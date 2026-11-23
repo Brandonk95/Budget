@@ -106,6 +106,8 @@ function restore(app, userId, b) {
           if (f.type === "json") v = v == null ? null : v;
           r.set(k, v);
         }
+        // backups from before the review inbox: don't fill it with all of history
+        if (name === "transactions" && !("reviewed" in src)) r.set("reviewed", true);
         // a required link that didn't survive (e.g. a split whose transaction is missing) drops the row
         if ((name === "transactions" && !r.getString("account")) || (name === "tx_splits" && !r.getString("transaction"))
           || (name === "rules" && !r.getString("category")) || (name === "account_history" && !r.getString("account"))) { result[name]--; continue; }
