@@ -35,7 +35,8 @@ self.addEventListener("push", (e) => {
   e.waitUntil(self.registration.showNotification(d.title || "Keel", {
     body: d.body || "",
     icon: "brand/icon-192.png",
-    badge: "brand/favicon-32.png",
+    // the status-bar icon: Android keeps only its shape (alpha), so it's a white sailboat on transparent
+    badge: "brand/badge-96.png",
     tag: d.tag || undefined,
     data: { url: d.url || "./" },
   }));

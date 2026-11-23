@@ -1,5 +1,5 @@
 {
-  "version": "2.19.1",
+  "version": "2.19.2",
   "released": "2026-11-23",
-  "motd": "The review inbox is now optional. Turn it off in Settings under More settings, and the Transactions count and reminders go away."
+  "motd": "Notifications now show the Keel sailboat in your phone's status bar instead of a plain square."
 }
