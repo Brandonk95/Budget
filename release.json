@@ -1,5 +1,5 @@
 {
-  "version": "2.19.0",
+  "version": "2.19.1",
   "released": "2026-11-23",
-  "motd": "Cash flow can now skip months that don't look like now, so an old pay level doesn't skew your forecast. Plus notifications on your phone and a bill calendar you can subscribe to (both in Settings)."
+  "motd": "The review inbox is now optional. Turn it off in Settings under More settings, and the Transactions count and reminders go away."
 }

@@ -1062,7 +1062,15 @@
 
   // ---- review inbox: new bank transactions wait here for a quick look
   const UNREVIEWED = "reviewed = false && estimated = false";
+  const reviewOn = () => !(pb.authStore.record || {}).review_off;
+  // turning it (back) on starts fresh: what came in while it was off isn't dumped on you
+  async function setReview(on) {
+    if (on) await api("/api/budget/review/all", { method: "POST" }).catch(() => {});
+    await saveMe({ review_off: !on });
+    refreshReviewBadge();
+  }
   async function reviewCount() {
+    if (!reviewOn()) return 0;
     try { return (await pb.collection("transactions").getList(1, 1, { filter: UNREVIEWED, fields: "id" })).totalItems; } catch (_) { return 0; }
   }
   async function refreshReviewBadge() {
@@ -1936,6 +1944,13 @@
     </div>`;
   }
   async function renderReview(view) {
+    if (!reviewOn()) {
+      view.innerHTML = `<div class="card rv-done"><span class="act-seal ok" aria-hidden="true"><svg viewBox="0 0 52 52"><path class="act-tick" d="M16 27l7 7 14-15"/></svg></span>
+        <h2>The review inbox is off</h2><p class="muted">Turn it on and new transactions from your bank wait here for a quick look: check each one off, or fix its category in one tap.</p>
+        <div class="row" style="justify-content:center"><a class="btn" href="#/transactions">All transactions</a><button class="btn primary" id="rv-on">Turn it on</button></div></div>`;
+      $("#rv-on", view).onclick = async () => { try { await setReview(true); toast("Review inbox is on. New transactions will show up here."); route(); } catch (err) { fail(err); } };
+      return;
+    }
     await Promise.all([loadCategories(), loadAccounts()]);
     const res = await pb.collection("transactions").getList(1, 200, { filter: UNREVIEWED, sort: "-date,-created" });
     if (!res.items.length) {
@@ -1948,7 +1963,7 @@
     const head = () => `${plural(left, "transaction")} to review`;
     view.innerHTML = `<div class="card rv-card">
       <div class="card-h"><div><h2 id="rv-h">${head()}</h2><div class="small muted">New from your bank. Check that each one is right; changing a category also teaches Keel that merchant.</div></div><div class="spacer"></div>
-        <button class="btn" id="rv-all">Mark all reviewed</button></div>
+        <button class="btn link sm" id="rv-off">Turn off</button><button class="btn" id="rv-all">Mark all reviewed</button></div>
       <div class="rv-list">${res.items.map(rvRow).join("")}</div></div>`;
     const byId = Object.fromEntries(res.items.map((t) => [t.id, t]));
     const done = (el) => {
@@ -1977,6 +1992,10 @@
         } catch (err) { fail(err); sel.value = t.category || ""; }
       };
     });
+    $("#rv-off").onclick = async () => {
+      if (!confirm("Turn off the review inbox? You can turn it back on in Settings under More settings.")) return;
+      try { await setReview(false); toast("Review inbox is off"); location.hash = "#/transactions"; } catch (err) { fail(err); }
+    };
     $("#rv-all").onclick = async (e) => {
       const btn = e.currentTarget; btn.classList.add("loading");
       try { const r = await api("/api/budget/review/all", { method: "POST" }); toast(`Marked ${plural(r.reviewed, "transaction")} reviewed`); route(); } catch (err) { fail(err); btn.classList.remove("loading"); }
@@ -3347,6 +3366,7 @@
             ${link("#/budget", "budget", "Categories and budgets", "Add, rename or archive categories; set monthly limits", "s2")}
             ${link("#/accounts", "accounts", "Accounts and bank connections", "Connect a bank, add manual accounts, import a CSV", "s1")}
             ${link("#/cashflow", "cashflow", "Low balance warning", floor ? `Warns below ${money(floor)}` : "Not set", "s8")}
+            <label class="set-row">${hIc("check", "s7")}<span class="grow"><b>Review inbox</b><span class="small muted">New transactions from your bank wait for a quick look, with a count on the Transactions tab. Just for you.</span></span><input type="checkbox" class="sw" id="review-on" ${me.review_off ? "" : "checked"}></label>
           </section>
           ${hh ? householdCard(hh, me, smtp) : ""}
           <section class="card" aria-labelledby="set-da">
@@ -3370,6 +3390,10 @@
       toast(`Theme: ${b.textContent}`);
       const tn = $("#set-theme-n span", view); if (tn) tn.textContent = `Theme: ${b.textContent}`;
     }));
+    $("#review-on", view).onchange = async (e) => {
+      const on = e.target.checked;
+      try { await setReview(on); toast(on ? "Review inbox is on. It starts with your next new transactions." : "Review inbox is off"); } catch (err) { fail(err); e.target.checked = !on; }
+    };
     $("#grav-on", view).onchange = (e) => {
       try { if (e.target.checked) localStorage.removeItem(GRAV_KEY); else localStorage.setItem(GRAV_KEY, "off"); } catch (_) {}
       $$(".av[data-email]").forEach((el) => {
