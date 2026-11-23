@@ -90,7 +90,11 @@ function callout(html, t, emoji) {
   return `<div style="background:${soft};border-left:4px solid ${a};border-radius:10px;padding:12px 14px;margin:16px 0 0;font-size:14px">${emoji ? `<span style="margin-right:6px">${emoji}</span>` : ""}${html}</div>`;
 }
 
-function send(app, to, subject, html) {
+// `opts.push: false` keeps it email-only (summaries and reports, which don't make good notifications)
+function send(app, to, subject, html, opts) {
+  if (!opts || opts.push !== false) {
+    try { require(`${__hooks}/lib/push.js`).fromEmail(app, to, subject, html); } catch (err) { app.logger().warn("push failed", "error", util.errMsg(err)); }
+  }
   if (!smtpReady(app)) {
     app.logger().warn("SMTP not configured; skipped email", "subject", subject, "to", to);
     return false;
@@ -233,7 +237,7 @@ function digest(app, user) {
     ${top.length ? `${section("🛍️", "Biggest purchases this week")}${table(top)}` : ""}
     ${tips ? `${section("", "Ideas for the rest of the month")}${tips}` : ""}`,
     { tone: "blue", icon: "👋", kicker: "Weekly check-in", stat: util.money(weekSpend), statLabel: "spent in the last 7 days" });
-  return send(app, user.getString("email"), `Weekly budget: ${util.money(weekSpend)} spent this week`, html);
+  return send(app, user.getString("email"), `Weekly budget: ${util.money(weekSpend)} spent this week`, html, { push: false });
 }
 
 module.exports = { send, layout, claimKey, row, table, stats, bar, meter, pill, section, callout, TONES, checkBudgets, largeTransactions, syncFailed, digest, billReminders, smtpReady };

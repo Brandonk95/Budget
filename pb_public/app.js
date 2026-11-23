@@ -2943,8 +2943,9 @@
               <div class="m-row"><span>Everyday spending <span class="muted small">estimated, about ${money(f.spend_per_day)}/day</span></span><span class="num">−${money(f.spend_total)}</span></div>
               ${f.other_in_per_day ? `<div class="m-row"><span>Other deposits <span class="muted small">estimated, about ${money(f.other_in_per_day)}/day</span></span><span class="num pos">+${money(f.other_in_per_day * f.days)}</span></div>` : ""}
               <div class="m-row total"><span>In ${f.days} days</span><span class="num">${money(f.end_balance)}</span></div>
-              <p class="small muted" style="margin:10px 0 0">Everyday spending is what usually leaves these accounts outside your recurring bills (card payments and transfers out included), averaged over the last ${plural(f.lookback_days, "day")}. Bills charged to a credit card are left out, since they're paid through the card payment.</p>
+              <p class="small muted" style="margin:10px 0 0">Everyday spending is what usually leaves these accounts outside your recurring bills (card payments and transfers out included), averaged over ${f.months && f.months.some((m) => m.skipped) ? `${plural(f.lookback_days, "day")} from the months you count` : `the last ${plural(f.lookback_days, "day")}`}. Bills charged to a credit card are left out, since they're paid through the card payment.</p>
             </section>
+            ${cfMonthsCard(f)}
             <section class="card" aria-labelledby="cf-floor-h">
               <div class="card-h"><h2 id="cf-floor-h" class="ic-h">${hIc("bell", "s8")}Low balance warning</h2></div>
               <form id="cf-floor" class="stack">
@@ -2980,7 +2981,32 @@
       } catch (err) { fail(err); }
     };
   }
+  // Which months the everyday spending rate comes from. Leave out months that don't look like
+  // now (before a raise or a pay cut) so they don't drag the forecast around.
+  function cfMonthsCard(f) {
+    const ms = f.months || [];
+    if (ms.length < 2) return "";
+    const top = Math.max(1, ...ms.map((m) => m.per_day));
+    const counted = ms.filter((m) => !m.skipped);
+    const label = (k) => { const [y, mo] = k.split("-").map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(undefined, { month: "long" }); };
+    return `<section class="card" aria-labelledby="cf-mo-h">
+      <div class="card-h"><h2 id="cf-mo-h" class="ic-h">${hIc("calendar", "s3")}Months it learns from</h2></div>
+      <p class="small muted" style="margin-top:0">Did your pay or spending change? Turn off months that don't look like now, and the forecast uses only the rest.</p>
+      <div class="cf-mos">${ms.map((m) => `<label class="cf-mo ${m.skipped ? "off" : ""}">
+          <input type="checkbox" class="sw" data-m="${m.month}" ${m.skipped ? "" : "checked"} ${!m.skipped && counted.length === 1 ? "disabled" : ""} aria-label="Count ${esc(label(m.month))}">
+          <span class="cf-mo-n"><b>${esc(label(m.month))}</b><span class="small muted">${plural(m.days, "day")}${m.month === f.today.slice(0, 7) ? " so far" : ""}</span></span>
+          <span class="cf-mo-bar" aria-hidden="true"><i style="width:${Math.max(2, (m.per_day / top) * 100).toFixed(1)}%"></i></span>
+          <span class="num cf-mo-v">${money(m.per_day)}<span class="small muted">/day</span></span>
+        </label>`).join("")}</div>
+      <p class="small muted" style="margin:10px 0 0">Counting ${counted.length === ms.length ? "every month" : counted.map((m) => label(m.month)).join(" and ")}: about <b>${money(f.spend_per_day)}</b> a day.</p>
+    </section>`;
+  }
+
   function bindCashflow(view) {
+    $$(".cf-mo input", view).forEach((b) => (b.onchange = async () => {
+      const months = $$(".cf-mo input", view).filter((x) => !x.checked).map((x) => x.dataset.m);
+      try { await api("/api/budget/forecast/skip", { method: "POST", body: { months } }); toast(b.checked ? "Counting that month again" : "Left that month out"); route(); } catch (err) { fail(err); b.checked = !b.checked; }
+    }));
     $$(".seg button", view).forEach((b) => (b.onclick = () => { cfState.days = +b.dataset.days; route(); }));
     const save = (ids) => { try { if (ids) localStorage.setItem("keel.cf.accounts", JSON.stringify(ids)); else localStorage.removeItem("keel.cf.accounts"); } catch (_) {} route(); };
     const apply = $("#cf-apply", view);
@@ -3266,6 +3292,7 @@
           <section class="card" aria-labelledby="set-no">
             <div class="card-h"><h2 id="set-no" class="ic-h">${hIc("bell", "s4")}Notifications</h2><div class="spacer"></div><span class="pill ${smtp ? "ok" : "err"}">${smtp ? "Email ready" : "Email not set up"}</span></div>
             ${smtp ? "" : `<p class="small muted" style="margin-top:0">Set the <span class="code">SMTP_*</span> variables in <span class="code">.env</span> and restart the container to turn on emails.</p>`}
+            <div id="push-box" class="push-box" aria-live="polite"></div>
             <form id="prefs">
               <div class="set-h">Spending</div>
               ${sw("alerts_enabled", me.alerts_enabled, "Budget alerts", "When a category nears or passes its budget", "budget", "s2")}
@@ -3286,6 +3313,12 @@
               ${sw("update_notes", me.update_notes, "What's new", "A small popup after Keel updates", "sparkle", "s7")}
               <div class="row" style="margin-top:16px"><button class="btn primary">Save notifications</button><button type="button" class="btn" id="digest-now" ${smtp ? "" : 'disabled title="Needs email set up"'}>Send a summary now</button></div>
             </form>
+          </section>
+
+          <section class="card" aria-labelledby="set-cal">
+            <div class="card-h"><h2 id="set-cal" class="ic-h">${hIc("calendar", "s4")}Bill calendar</h2></div>
+            <p class="small muted" style="margin-top:0">See bills, subscriptions and paydays in Google Calendar, Apple Calendar or Outlook, next to everything else. It refreshes every few hours.</p>
+            <div id="cal-box"></div>
           </section>
 
           <section class="card" aria-labelledby="set-pr">
@@ -3376,6 +3409,8 @@
       } catch (err) { fail(err); }
     };
     const ia = $("#install-app"); if (ia) ia.onclick = runInstall;
+    pushBox($("#push-box", view));
+    calBox($("#cal-box", view));
     $("#digest-now").onclick = async () => { try { const r = await api("/api/budget/digest", { method: "POST" }); toast("Sent to " + r.to); } catch (err) { fail(err); } };
     $("#logout").onclick = () => { pb.authStore.clear(); history.replaceState(null, "", location.pathname); renderLanding(); };
     const rp = $("#reset-pw"); if (rp) rp.onclick = async () => { try { await pb.collection("users").requestPasswordReset(me.email); toast("Reset link sent"); } catch (err) { fail(err); } };
@@ -3417,6 +3452,109 @@
   }
 
   // ------------------------------------------------------------------ household (Settings)
+  // ---- notifications on this device (Web Push)
+  const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && window.isSecureContext;
+  const deviceLabel = () => {
+    const ua = navigator.userAgent;
+    const os = /iphone/i.test(ua) ? "iPhone" : /ipad/i.test(ua) ? "iPad" : /android/i.test(ua) ? "Android" : /mac/i.test(ua) ? "Mac" : /windows/i.test(ua) ? "Windows" : /linux/i.test(ua) ? "Linux" : "Device";
+    const br = /edg\//i.test(ua) ? "Edge" : /firefox/i.test(ua) ? "Firefox" : /chrome|crios/i.test(ua) ? "Chrome" : /safari/i.test(ua) ? "Safari" : "Browser";
+    return `${br} on ${os}`;
+  };
+  function b64ToBytes(b64) {
+    const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64.length + 3) % 4));
+    return Uint8Array.from(s, (c) => c.charCodeAt(0));
+  }
+  async function currentSub() {
+    if (!pushSupported()) return null;
+    const reg = await navigator.serviceWorker.getRegistration();
+    return reg ? reg.pushManager.getSubscription() : null;
+  }
+  async function pushOn() {
+    if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications weren't allowed. You can change that in your browser's site settings.");
+    const { key } = await api("/api/budget/push/key");
+    if (!key) throw new Error("This server can't send notifications.");
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    // a subscription made for another server key can't be reused
+    if (sub && sub.options && sub.options.applicationServerKey) {
+      const a = new Uint8Array(sub.options.applicationServerKey), b = b64ToBytes(key);
+      if (a.length !== b.length || a.some((x, i) => x !== b[i])) { await sub.unsubscribe(); sub = null; }
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    const j = sub.toJSON();
+    await api("/api/budget/push/subscribe", { method: "POST", body: { endpoint: j.endpoint, keys: j.keys, label: deviceLabel() } });
+  }
+  async function pushOff() {
+    const sub = await currentSub();
+    if (!sub) return;
+    await api("/api/budget/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } }).catch(() => {});
+    await sub.unsubscribe();
+  }
+  async function pushBox(box) {
+    if (!box) return;
+    const row = (inner, desc) => `<div class="set-row push-row">${hIc("phone", "s3")}<span class="grow"><b>Notifications on this device</b><span class="small muted">${desc}</span></span>${inner}</div>`;
+    const here = /iphone|ipad|android/i.test(navigator.userAgent) ? "phone" : "computer";
+    if (!state.status.push) { box.innerHTML = row("", "This server can't send notifications yet. Update to the latest Keel image."); return; }
+    if (!pushSupported()) {
+      box.innerHTML = row("", isIOS() && !isStandalone() ? "On iPhone and iPad, add Keel to your Home Screen first (Share → Add to Home Screen), then open it from there and turn this on." : "This browser can't show notifications from websites.");
+      return;
+    }
+    if (Notification.permission === "denied") { box.innerHTML = row("", "Notifications are blocked for this site. Allow them in your browser's site settings, then come back."); return; }
+    const sub = await currentSub();
+    let on = !!sub && Notification.permission === "granted";
+    // make sure the server still knows this device (it forgets ones that stopped working)
+    if (on) { const j = sub.toJSON(); api("/api/budget/push/subscribe", { method: "POST", body: { endpoint: j.endpoint, keys: j.keys, label: deviceLabel() } }).catch(() => {}); }
+    box.innerHTML = row(`<input type="checkbox" class="sw" id="push-on" aria-label="Notifications on this device" ${on ? "checked" : ""}>`,
+      `The alerts you turn on below also show up as notifications on this ${here}.${on ? ` <button type="button" class="btn link sm" id="push-test">Send a test</button>` : ""}`);
+    $("#push-on", box).onchange = async (e) => {
+      const want = e.target.checked;
+      e.target.disabled = true;
+      try { if (want) { await pushOn(); toast("Notifications are on for this device"); } else { await pushOff(); toast("Notifications are off for this device"); } }
+      catch (err) { fail(err); }
+      pushBox(box);
+    };
+    const t = $("#push-test", box);
+    if (t) t.onclick = async () => {
+      try { const r = await api("/api/budget/push/test", { method: "POST" }); toast(r.sent ? "Sent. It should pop up in a moment." : "Couldn't reach this device. Try turning notifications off and on."); } catch (err) { fail(err); }
+    };
+  }
+
+  // ---- bill calendar feed
+  async function calBox(box) {
+    if (!box) return;
+    let url = null;
+    try { url = (await api("/api/budget/calendar")).url; } catch (_) {}
+    const draw = () => {
+      if (!url) {
+        box.innerHTML = `<button class="btn primary" id="cal-make">${icon("calendar")} Get my calendar link</button>`;
+        $("#cal-make", box).onclick = async () => { try { url = (await api("/api/budget/calendar", { method: "POST", body: {} })).url; draw(); } catch (err) { fail(err); } };
+        return;
+      }
+      const webcal = url.replace(/^https?:/, "webcal:");
+      box.innerHTML = `
+        <div class="cal-url"><input readonly value="${esc(url)}" aria-label="Calendar link" id="cal-url"><button class="btn" id="cal-copy">Copy</button></div>
+        <div class="row cal-add">
+          <a class="btn sm" href="https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}" target="_blank" rel="noopener">Add to Google Calendar</a>
+          <a class="btn sm" href="${esc(webcal)}">Open in Apple Calendar or Outlook</a>
+        </div>
+        <p class="small muted" style="margin:10px 0 0">Anyone with this link can see your bill schedule (names, amounts and dates, nothing else). If it gets out, make a new one and the old link stops working.</p>
+        <div class="row" style="margin-top:8px"><button class="btn link sm" id="cal-new">Make a new link</button><button class="btn link sm" id="cal-off">Turn off</button></div>`;
+      $("#cal-url", box).onfocus = (e) => e.target.select();
+      $("#cal-copy", box).onclick = async () => {
+        try { await navigator.clipboard.writeText(url); toast("Calendar link copied"); } catch (_) { $("#cal-url", box).select(); toast("Press Ctrl+C to copy"); }
+      };
+      $("#cal-new", box).onclick = async () => {
+        if (!confirm("Make a new calendar link? Calendars using the old one stop updating until you add the new one.")) return;
+        try { url = (await api("/api/budget/calendar", { method: "POST", body: { reset: true } })).url; draw(); toast("New link ready"); } catch (err) { fail(err); }
+      };
+      $("#cal-off", box).onclick = async () => {
+        if (!confirm("Turn off the calendar link? Calendars using it stop updating.")) return;
+        try { await api("/api/budget/calendar", { method: "DELETE" }); url = null; draw(); toast("Calendar link turned off"); } catch (err) { fail(err); }
+      };
+    };
+    draw();
+  }
+
   function householdCard(hh, me, smtp) {
     const who = (p) => esc(p.name || p.email);
     const personRow = (p, tag, btn) => `<div class="hh-row">${personAv(p)}

@@ -1,3 +1,10 @@
+# keel-push: a tiny helper that sends Web Push notifications (the hooks can't do its crypto)
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS push
+ARG TARGETARCH
+WORKDIR /src
+COPY tools/push/ ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} GOARM=7 go build -trimpath -ldflags="-s -w" -o /keel-push .
+
 FROM alpine:3.22
 
 LABEL org.opencontainers.image.title="Keel"       org.opencontainers.image.description="Self-hosted budgeting with bank sync, built on PocketBase"       org.opencontainers.image.source="https://github.com/Brandonk95/Budget"
@@ -32,6 +39,7 @@ RUN v=$(cat pb_public/app.js pb_public/styles.css | md5sum | cut -c1-10) \
 RUN mkdir -p pb_public/vendor \
  && wget -q "https://cdn.jsdelivr.net/npm/pocketbase@${PB_SDK_VERSION}/dist/pocketbase.umd.js" -O pb_public/vendor/pocketbase.umd.js \
  && wget -q "https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@${INTER_VERSION}/files/inter-latin-wght-normal.woff2" -O pb_public/vendor/inter.woff2
+COPY --from=push /keel-push /usr/local/bin/keel-push
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 

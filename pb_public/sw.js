@@ -28,6 +28,30 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// notifications from Keel (see pb_hooks/lib/push.js)
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Keel", {
+    body: d.body || "",
+    icon: "brand/icon-192.png",
+    badge: "brand/favicon-32.png",
+    tag: d.tag || undefined,
+    data: { url: d.url || "./" },
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) {
+      if (new URL(c.url).origin === location.origin && "focus" in c) return c.focus().then((w) => (w && "navigate" in w ? w.navigate(url) : w));
+    }
+    return self.clients.openWindow(url);
+  }));
+});
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;

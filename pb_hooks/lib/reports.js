@@ -198,7 +198,7 @@ function monthlyEmail(app, user, force) {
     ${merch.length ? `${notify.section("🛍️", "Where it went")}${notify.table(merch)}` : ""}
     ${rep.subscriptions.total ? notify.callout(`Subscriptions cost <b>${util.money(rep.subscriptions.total)}</b> this month.`, "purple", "🔁") : ""}`,
     { tone: rep.income > 0 && rep.net < 0 ? "blue" : "green", icon: "📅", kicker: "Monthly report", stat: util.money(rep.spent), statLabel: `spent in ${label}`, button: { label: "See the full report", href: `${url}/#/reports` } });
-  return notify.send(app, user.getString("email"), `${label}: ${util.money(rep.spent)} spent${rep.savings_rate != null && rep.net > 0 ? `, ${rep.savings_rate}% saved` : ""}`, html);
+  return notify.send(app, user.getString("email"), `${label}: ${util.money(rep.spent)} spent${rep.savings_rate != null && rep.net > 0 ? `, ${rep.savings_rate}% saved` : ""}`, html, { push: false });
 }
 
 module.exports = { month, year, monthlyEmail };

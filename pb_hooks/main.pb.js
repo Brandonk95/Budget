@@ -383,6 +383,66 @@ routerAdd("POST", "/api/budget/review/all", (e) => {
   return e.json(200, { reviewed: n });
 }, $apis.requireAuth("users"));
 
+// ---- phone and browser notifications
+routerAdd("GET", "/api/budget/push/key", (e) => {
+  const push = require(`${__hooks}/lib/push.js`);
+  const devices = e.app.findRecordsByFilter("push_subs", "user = {:u}", "-created", 0, 0, { u: e.auth.id }).map((s) => ({ endpoint: s.getString("endpoint"), label: s.getString("label") }));
+  return e.json(200, { key: push.publicKey(e.app), devices });
+}, $apis.requireAuth("users"));
+routerAdd("POST", "/api/budget/push/subscribe", (e) => {
+  try { return e.json(200, require(`${__hooks}/lib/push.js`).subscribe(e.app, e.auth.id, e.requestInfo().body || {})); }
+  catch (err) { throw new BadRequestError(String(err.message || err)); }
+}, $apis.requireAuth("users"));
+routerAdd("POST", "/api/budget/push/unsubscribe", (e) => {
+  return e.json(200, require(`${__hooks}/lib/push.js`).unsubscribe(e.app, e.auth.id, (e.requestInfo().body || {}).endpoint));
+}, $apis.requireAuth("users"));
+routerAdd("POST", "/api/budget/push/test", (e) => {
+  const push = require(`${__hooks}/lib/push.js`);
+  const n = push.sendTo(e.app, [e.auth.id], { title: e.app.settings().meta.appName || "Keel", body: "Notifications are on. You'll hear about paychecks, big charges, bills and budgets here.", url: "/#/settings", tag: "test" });
+  return e.json(200, { sent: n });
+}, $apis.requireAuth("users"));
+
+// ---- bill calendar feed
+routerAdd("GET", "/api/budget/calendar", (e) => {
+  const cal = require(`${__hooks}/lib/calendar.js`);
+  const me = e.app.findRecordById("users", e.auth.id);
+  return e.json(200, { url: cal.urlFor(e.app, me.getString("cal_token")) });
+}, $apis.requireAuth("users"));
+routerAdd("POST", "/api/budget/calendar", (e) => {
+  const cal = require(`${__hooks}/lib/calendar.js`);
+  const me = e.app.findRecordById("users", e.auth.id);
+  return e.json(200, { url: cal.ensureToken(e.app, me, !!(e.requestInfo().body || {}).reset) });
+}, $apis.requireAuth("users"));
+routerAdd("DELETE", "/api/budget/calendar", (e) => {
+  const me = e.app.findRecordById("users", e.auth.id);
+  me.set("cal_token", "");
+  e.app.save(me);
+  return e.json(200, { url: null });
+}, $apis.requireAuth("users"));
+// the feed itself: no login, the secret token in the URL is the key
+routerAdd("GET", "/api/budget/feed/{file}", (e) => {
+  const token = String(e.request.pathValue("file") || "").replace(/\.ics$/, "");
+  if (token.length < 30) throw new NotFoundError();
+  let user;
+  try { user = e.app.findFirstRecordByFilter("users", "cal_token = {:t}", { t: token }); } catch (_) { throw new NotFoundError(); }
+  const out = require(`${__hooks}/lib/calendar.js`).feed(e.app, user);
+  const h = e.response.header();
+  h.set("Content-Type", "text/calendar; charset=utf-8");
+  h.set("Content-Disposition", 'inline; filename="keel-bills.ics"');
+  h.set("Cache-Control", "private, max-age=900");
+  return e.string(200, out.ics);
+});
+
+// Months to leave out of the forecast's everyday spending rate (shared by the household).
+routerAdd("POST", "/api/budget/forecast/skip", (e) => {
+  const body = e.requestInfo().body || {};
+  const months = (Array.isArray(body.months) ? body.months : []).map(String).filter((m) => /^\d{4}-\d{2}$/.test(m)).slice(0, 36);
+  const owner = e.app.findRecordById("users", e.auth.getString("household") || e.auth.id);
+  owner.set("cf_skip_months", months.join(","));
+  e.app.save(owner);
+  return e.json(200, { months });
+}, $apis.requireAuth("users"));
+
 routerAdd("GET", "/api/budget/forecast", (e) => {
   const forecast = require(`${__hooks}/lib/forecast.js`);
   const q = e.request.url.query();
@@ -432,6 +492,7 @@ routerAdd("GET", "/api/budget/status", (e) => {
     released: rel.released,
     motd: rel.motd,
     smtp: e.app.settings().smtp.enabled,
+    push: require(`${__hooks}/lib/push.js`).available(),
     app_name: e.app.settings().meta.appName,
   });
 });

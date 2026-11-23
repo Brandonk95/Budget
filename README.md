@@ -9,8 +9,10 @@
 - **Split and exclude**: split one purchase across categories (part groceries, part household), or leave transfers, reimbursements and one-offs out of your budget and spending. Balances always use the real amounts. Filter the Transactions page by split or excluded transactions.
 - **Spending** breakdown by category and merchant, with a 6-month trend.
 - **Until payday**: what's safe to spend before your next paycheck lands (checking, minus the bills due before then and the cushion you keep), and a plan for your latest paycheck: the bills due before the next one, a share for your goals, and the spending money left, per day. The plan is in the paycheck email too.
+- **Notifications on your phone or computer**: turn them on per device in Settings, and the alerts you've switched on (paychecks, large charges, budgets, bills, low balance and more) pop up as notifications as well as emails. They work without email set up too. On iPhone, add Keel to your Home Screen first.
+- **Bill calendar**: a private link you subscribe to in Google Calendar, Apple Calendar or Outlook, with your bills, subscriptions and paydays. Make a new link any time and the old one stops working.
 - **Review inbox**: new transactions from your bank wait for a quick look. Check each one off or fix its category in one tap (Keel learns the merchant), or mark them all reviewed. The Transactions tab shows how many are waiting.
-- **Cash-flow forecast**: your checking balance projected day by day for the next 30 to 90 days, with bills and paychecks on their expected dates plus your usual everyday spending. It shows the lowest point and your balance before the next payday. Set a warning level and get an email when your balance is projected to drop below it in the next two weeks.
+- **Cash-flow forecast**: your checking balance projected day by day for the next 30 to 90 days, with bills and paychecks on their expected dates plus your usual everyday spending. It shows the lowest point and your balance before the next payday. If your pay or spending changed, turn off the months that don't look like now and the forecast learns only from the rest. Set a warning level and get an email when your balance is projected to drop below it in the next two weeks.
 - **Reports**: a month or year in review. Income against spending, what you kept and your savings rate, the categories that changed most, top merchants, largest purchases and what your subscriptions cost. A year view charts income and spending month by month. The month's report is also emailed on the 1st.
 - **Net worth** over time: assets minus credit cards and loans, recorded daily (earlier history is estimated from transactions).
 - **Overview**: spending so far this month against last month, left to spend, upcoming bills, accounts and recent transactions.
@@ -183,8 +185,12 @@ pb_hooks/        server logic (JS, runs inside PocketBase)
   lib/spending.js   category and merchant breakdowns
   lib/networth.js   net worth snapshots and history
   lib/notify.js     SMTP emails
+  lib/push.js       phone and browser notifications (Web Push)
+  lib/calendar.js   the bill calendar (.ics) feed
+  lib/payday.js     until payday and the paycheck plan
   lib/rules.js      auto-categorization and default categories
 pb_public/       web app (vanilla JS + PocketBase SDK)
+tools/push/      keel-push, a small Go helper in the image that sends Web Push (encryption and signing)
 assets/          icon.png (CasaOS) and brand/ originals (favicon, logo, transparent logo)
 pb_public/brand/ web-sized favicon, logo and wordmark
 ```

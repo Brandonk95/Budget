@@ -14,6 +14,11 @@ const r2 = util.round2;
 const dayOf = (ms) => { const d = new Date(ms); return d.getUTCFullYear() + "-" + util.pad(d.getUTCMonth() + 1) + "-" + util.pad(d.getUTCDate()); };
 const msOf = (day) => { const [y, m, d] = day.split("-").map(Number); return Date.UTC(y, m - 1, d); };
 
+// "2026-09,2026-10" on the household owner
+function skipList(user) {
+  return String(user.getString("cf_skip_months") || "").split(",").map((s) => s.trim()).filter((s) => /^\d{4}-\d{2}$/.test(s));
+}
+
 function forecast(app, userId, opts) {
   opts = opts || {};
   const days = Math.max(14, Math.min(120, opts.days || 45));
@@ -65,15 +70,30 @@ function forecast(app, userId, opts) {
   // how much history there is (a new account shouldn't be divided by 90 days)
   let first = today;
   for (const t of txs) { const d = t.getString("date").slice(0, 10); if (d < first) first = d; }
-  const span = Math.max(14, Math.min(LOOKBACK, Math.round((msOf(today) - msOf(first)) / DAY)));
+  // months you've left out (a raise or a pay cut changed how you spend, so they'd skew the rate)
+  const skipMonths = {};
+  for (const m of skipList(user)) skipMonths[m] = true;
+  const months = {};
+  const winStart = first > since ? first : since;
+  for (let ms = msOf(winStart); ms < msOf(today); ms += DAY) {
+    const k = dayOf(ms).slice(0, 7);
+    (months[k] = months[k] || { month: k, days: 0, out: 0, in: 0 }).days++;
+  }
+  if (Object.keys(months).length && Object.keys(months).every((k) => skipMonths[k])) for (const k in skipMonths) delete skipMonths[k]; // can't leave everything out
   let out = 0, inn = 0;
   for (const t of txs) {
     if (skip[t.id]) continue;
     const amt = t.getFloat("amount");
     const key = recurring.normalizePayee(t.getString("payee") || t.getString("description")) + "|" + (amt > 0 ? "in" : "out");
     if (recKeys[key]) continue; // already on the calendar
+    const mo = months[t.getString("date").slice(0, 7)];
+    if (mo) { if (amt < 0) mo.out += -amt; else mo.in += amt; }
+    if (skipMonths[t.getString("date").slice(0, 7)]) continue;
     if (amt < 0) out += -amt; else inn += amt;
   }
+  const skipped = Object.keys(months).filter((k) => skipMonths[k]);
+  const counted = Object.keys(months).filter((k) => !skipMonths[k]).reduce((s, k) => s + months[k].days, 0);
+  const span = skipped.length ? Math.max(7, counted) : Math.max(14, Math.min(LOOKBACK, Math.round((msOf(today) - msOf(first)) / DAY)));
   const spendPerDay = txs.length ? out / span : 0;
   // irregular deposits only count when no paycheck was detected (otherwise stay conservative)
   const otherInPerDay = !hasIncome && txs.length ? inn / span : 0;
@@ -107,6 +127,7 @@ function forecast(app, userId, opts) {
     accounts: accounts.map((a) => ({ id: a.id, name: a.name, institution: a.institution, type: a.type, balance: r2(a.balance) })),
     choices, has_income: hasIncome,
     spend_per_day: r2(spendPerDay), other_in_per_day: r2(otherInPerDay), lookback_days: span,
+    months: Object.keys(months).sort().map((k) => ({ month: k, days: months[k].days, out: r2(months[k].out), per_day: r2(months[k].out / Math.max(1, months[k].days)), skipped: !!skipMonths[k] })),
     income_total: sum("income"), bills_total: sum("bills"), spend_total: r2(spendPerDay * days),
     low, before_payday: beforePay, next_income: nextIncome, below_floor_day: belowDay,
     points,
@@ -134,4 +155,4 @@ function lowBalanceAlert(app, user) {
   return true;
 }
 
-module.exports = { forecast, lowBalanceAlert };
+module.exports = { skipList, forecast, lowBalanceAlert };

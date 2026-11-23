@@ -1,5 +1,5 @@
 {
-  "version": "2.18.0",
+  "version": "2.19.0",
   "released": "2026-11-23",
-  "motd": "New on Overview: Until payday shows what's safe to spend before your next paycheck, with a plan for the last one. New transactions now wait in a review inbox for a quick look."
+  "motd": "Cash flow can now skip months that don't look like now, so an old pay level doesn't skew your forecast. Plus notifications on your phone and a bill calendar you can subscribe to (both in Settings)."
 }
